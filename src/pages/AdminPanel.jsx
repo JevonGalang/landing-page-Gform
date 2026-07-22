@@ -61,6 +61,15 @@ export default function AdminPanel() {
   const [inputKelas, setInputKelas] = useState("");
   const [inputKeterangan, setInputKeterangan] = useState("");
 
+  // UM PTKIN mode states
+  const [isUmPtkinMode, setIsUmPtkinMode] = useState(false);
+  const [umSupervisors, setUmSupervisors] = useState({
+    sesi1: "",
+    sesi2: "",
+    sesi3: "",
+    sesi4: "",
+  });
+
   // Helper to check if lab is locked (Podcast, ELC, Riset)
   const isLockedLab = (labName) => {
     if (!labName) return false;
@@ -307,6 +316,93 @@ export default function AdminPanel() {
   // Handle Add Schedule (Jadwal Kuliah) via backend API
   const handleAddSchedule = async (e) => {
     e.preventDefault();
+
+    if (isUmPtkinMode) {
+      if (!inputLab || !inputTanggal) {
+        Swal.fire({
+          icon: "warning",
+          title: "Form Belum Lengkap",
+          text: "Laboratorium dan Tanggal Pelaksanaan wajib diisi!",
+        });
+        return;
+      }
+
+      const todayStr = getTodayDateString();
+      if (inputTanggal < todayStr) {
+        Swal.fire({
+          icon: "error",
+          title: "Tanggal Tidak Valid",
+          text: "Tanggal pelaksanaan tidak boleh sebelum hari ini!",
+        });
+        return;
+      }
+
+      const selectedLabObj = laboratories.find(l => l.name === inputLab);
+      const labId = selectedLabObj ? selectedLabObj.id : 1;
+
+      // Define 4 UM PTKIN sessions (07:30 to 15:30)
+      const sessions = [
+        { jamMulai: "07:30", jamSelesai: "10:00", dosen: umSupervisors.sesi1 || inputDosen || "Dosen Pengawas Sesi 1" },
+        { jamMulai: "10:00", jamSelesai: "12:30", dosen: umSupervisors.sesi2 || inputDosen || "Dosen Pengawas Sesi 2" },
+        { jamMulai: "12:30", jamSelesai: "15:00", dosen: umSupervisors.sesi3 || inputDosen || "Dosen Pengawas Sesi 3" },
+        { jamMulai: "15:00", jamSelesai: "15:30", dosen: umSupervisors.sesi4 || inputDosen || "Dosen Pengawas Sesi 4" },
+      ];
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const session of sessions) {
+        try {
+          const result = await createSchedule({
+            labId,
+            prodi: "UM PTKIN",
+            matkul: "UM PTKIN",
+            kelas: inputLab,
+            dosen: session.dosen,
+            tanggal: inputTanggal,
+            jamMulai: session.jamMulai,
+            jamSelesai: session.jamSelesai,
+            source: "um_ptkin",
+          });
+          if (result.success) successCount++;
+          else failCount++;
+        } catch {
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        await Swal.fire({
+          icon: "success",
+          title: "Berhasil",
+          text: `${successCount} Sesi Jadwal UM PTKIN (07:30 - 15:30) berhasil dibuat otomatis!`,
+        });
+
+        // Reset form states
+        setInputLab("");
+        setInputProdi("");
+        setInputKelas("");
+        setInputMatkul("");
+        setInputDosen("");
+        setInputTanggal("");
+        setInputJamMulai("");
+        setInputJamSelesai("");
+        setInputKeterangan("");
+        setIsUmPtkinMode(false);
+        setUmSupervisors({ sesi1: "", sesi2: "", sesi3: "", sesi4: "" });
+
+        // Refresh data dari backend
+        await refreshData();
+        setActiveTab("data-penggunaan");
+      } else {
+        Swal.fire({
+          icon: "error",
+          title: "Gagal",
+          text: "Gagal membuat jadwal UM PTKIN.",
+        });
+      }
+      return;
+    }
 
     let finalProdi = inputProdi;
     let finalMatkul = inputMatkul;
@@ -3489,7 +3585,9 @@ const handleSaveEdit = (e) => {
                         onChange={(e) => {
                           const newLab = e.target.value;
                           setInputLab(newLab);
-                          if (isLockedLab(newLab)) {
+                          if (isUmPtkinMode) {
+                            setInputKelas(newLab);
+                          } else if (isLockedLab(newLab)) {
                             setInputProdi("Umum");
                             setInputMatkul("");
                             setInputKeterangan("");
@@ -3519,13 +3617,13 @@ const handleSaveEdit = (e) => {
                         </label>
                         <input
                           type="text"
-                          required
-                          disabled={isLockedLab(inputLab)}
-                          placeholder={isLockedLab(inputLab) ? "Umum (Terkunci)" : "Contoh: Teknik Informatika"}
-                          value={inputProdi}
+                          required={!isUmPtkinMode}
+                          disabled={isLockedLab(inputLab) || isUmPtkinMode}
+                          placeholder={isUmPtkinMode ? "UM PTKIN (Otomatis)" : (isLockedLab(inputLab) ? "Umum (Terkunci)" : "Contoh: Teknik Informatika")}
+                          value={isUmPtkinMode ? "UM PTKIN" : (isLockedLab(inputLab) ? "Umum" : inputProdi)}
                           onChange={(e) => setInputProdi(e.target.value)}
                           className={`w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition ${
-                            isLockedLab(inputLab) ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" : "bg-slate-50/50"
+                            isLockedLab(inputLab) || isUmPtkinMode ? "bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 font-semibold" : "bg-slate-50/50"
                           }`}
                         />
                       </div>
@@ -3535,11 +3633,14 @@ const handleSaveEdit = (e) => {
                         </label>
                         <input
                           type="text"
-                          required
-                          placeholder="Contoh: TI-4A"
-                          value={inputKelas}
+                          required={!isUmPtkinMode}
+                          disabled={isUmPtkinMode}
+                          placeholder={isUmPtkinMode ? (inputLab || "Nama Lab (Otomatis)") : "Contoh: TI-4A"}
+                          value={isUmPtkinMode ? (inputLab || "Nama Lab") : inputKelas}
                           onChange={(e) => setInputKelas(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50"
+                          className={`w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition ${
+                            isUmPtkinMode ? "bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 font-semibold" : "bg-slate-50/50"
+                          }`}
                         />
                       </div>
                     </div>
@@ -3552,24 +3653,24 @@ const handleSaveEdit = (e) => {
                         </label>
                         <input
                           type="text"
-                          required
-                          disabled={isLockedLab(inputLab)}
-                          placeholder={isLockedLab(inputLab) ? "Diisi lewat kolom Keterangan" : "Contoh: Pemrograman Berorientasi Objek"}
-                          value={isLockedLab(inputLab) ? inputKeterangan : inputMatkul}
+                          required={!isUmPtkinMode}
+                          disabled={isLockedLab(inputLab) || isUmPtkinMode}
+                          placeholder={isUmPtkinMode ? "UM PTKIN (Otomatis)" : (isLockedLab(inputLab) ? "Diisi lewat kolom Keterangan" : "Contoh: Pemrograman Berorientasi Objek")}
+                          value={isUmPtkinMode ? "UM PTKIN" : (isLockedLab(inputLab) ? inputKeterangan : inputMatkul)}
                           onChange={(e) => setInputMatkul(e.target.value)}
                           className={`w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition ${
-                            isLockedLab(inputLab) ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200" : "bg-slate-50/50"
+                            isLockedLab(inputLab) || isUmPtkinMode ? "bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 font-semibold" : "bg-slate-50/50"
                           }`}
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                          Nama Dosen Pengampu
+                          {isUmPtkinMode ? "Dosen Pengawas (Opsional Utm)" : "Nama Dosen Pengampu"}
                         </label>
                         <input
                           type="text"
-                          required
-                          placeholder="Contoh: Dr. Irwan, M.T."
+                          required={!isUmPtkinMode}
+                          placeholder={isUmPtkinMode ? "Contoh: Dr. Nenny (atau isi per sesi di bawah)" : "Contoh: Dr. Irwan, M.T."}
                           value={inputDosen}
                           onChange={(e) => setInputDosen(e.target.value)}
                           className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50"
@@ -3577,8 +3678,101 @@ const handleSaveEdit = (e) => {
                       </div>
                     </div>
 
+                    {/* Radio / Checkbox Mode UM PTKIN (Di bawah field Dosen) */}
+                    <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          id="umPtkinToggle"
+                          checked={isUmPtkinMode}
+                          onChange={(e) => {
+                            const active = e.target.checked;
+                            setIsUmPtkinMode(active);
+                            if (active) {
+                              setInputProdi("UM PTKIN");
+                              setInputMatkul("UM PTKIN");
+                              if (inputLab) setInputKelas(inputLab);
+                            } else {
+                              setInputProdi("");
+                              setInputMatkul("");
+                              setInputKelas("");
+                            }
+                          }}
+                          className="w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500 cursor-pointer"
+                        />
+                        <label htmlFor="umPtkinToggle" className="text-xs font-bold text-amber-900 cursor-pointer select-none">
+                          Sedang Ada UM PTKIN
+                        </label>
+                      </div>
+                      {isUmPtkinMode && (
+                        <span className="text-[10px] font-black bg-amber-200 text-amber-900 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                          Mode UM PTKIN Aktif
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Input Dosen Pengawas Per Sesi (Jika mode UM PTKIN aktif) */}
+                    {isUmPtkinMode && (
+                      <div className="bg-amber-50/40 border border-amber-200/80 p-4 rounded-2xl space-y-3">
+                        <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                          <Clock size={14} className="text-amber-600 shrink-0" />
+                          Dosen Pengawas Per Sesi Ujian (07:30 - 15:30)
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Sesi 1 (07:30 - 10:00)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Nama Pengawas Sesi 1..."
+                              value={umSupervisors.sesi1}
+                              onChange={(e) => setUmSupervisors(prev => ({ ...prev, sesi1: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none text-xs bg-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Sesi 2 (10:00 - 12:30)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Nama Pengawas Sesi 2..."
+                              value={umSupervisors.sesi2}
+                              onChange={(e) => setUmSupervisors(prev => ({ ...prev, sesi2: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none text-xs bg-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Sesi 3 (12:30 - 15:00)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Nama Pengawas Sesi 3..."
+                              value={umSupervisors.sesi3}
+                              onChange={(e) => setUmSupervisors(prev => ({ ...prev, sesi3: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none text-xs bg-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Sesi 4 (15:00 - 15:30)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Nama Pengawas Sesi 4..."
+                              value={umSupervisors.sesi4}
+                              onChange={(e) => setUmSupervisors(prev => ({ ...prev, sesi4: e.target.value }))}
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none text-xs bg-white"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Keterangan (Only shown if Podcast, ELC 1/2, or Riset is selected) */}
-                    {isLockedLab(inputLab) && (
+                    {isLockedLab(inputLab) && !isUmPtkinMode && (
                       <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
                           Keterangan Kegiatan
@@ -3612,33 +3806,42 @@ const handleSaveEdit = (e) => {
                       />
                     </div>
 
-                    {/* Jam Mulai & Jam Selesai */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                          Jam Mulai
-                        </label>
-                        <input
-                          type="time"
-                          required
-                          value={inputJamMulai}
-                          onChange={(e) => setInputJamMulai(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50"
-                        />
+                    {/* Jam Mulai & Jam Selesai atau Banner Otomatis UM PTKIN */}
+                    {isUmPtkinMode ? (
+                      <div className="bg-amber-50/80 border border-amber-200 text-amber-900 p-4 rounded-2xl text-xs space-y-1">
+                        <span className="font-bold block text-amber-950">Penjadwalan Otomatis Ujian UM PTKIN (07:30 - 15:30)</span>
+                        <p className="text-[11px] text-amber-800 leading-relaxed">
+                          Sistem akan otomatis membuat 4 sesi jadwal penuh (Sesi 1: 07:30-10:00, Sesi 2: 10:00-12:30, Sesi 3: 12:30-15:00, Sesi 4: 15:00-15:30) pada laboratorium dan tanggal yang dipilih, serta memblokir slot tersebut dari pemesanan mahasiswa.
+                        </p>
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                          Jam Selesai
-                        </label>
-                        <input
-                          type="time"
-                          required
-                          value={inputJamSelesai}
-                          onChange={(e) => setInputJamSelesai(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50"
-                        />
+                    ) : (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                            Jam Mulai
+                          </label>
+                          <input
+                            type="time"
+                            required
+                            value={inputJamMulai}
+                            onChange={(e) => setInputJamMulai(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                            Jam Selesai
+                          </label>
+                          <input
+                            type="time"
+                            required
+                            value={inputJamSelesai}
+                            onChange={(e) => setInputJamSelesai(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50"
+                          />
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Submit button */}
                     <div className="pt-2 flex justify-end gap-3">
