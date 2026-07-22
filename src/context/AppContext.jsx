@@ -102,6 +102,15 @@ const mapBackendSchedule = (item) => {
   if (!prodi) prodi = "Umum";
   if (!kelas) kelas = "-";
 
+  let source = item.source || item.sourcenya || "";
+  if (!source) {
+    const isUmPtkin = prodi === "UM PTKIN" || item.prodinya === "UM PTKIN" || item.matkul === "UM PTKIN" || item.matkulnya === "UM PTKIN" || item.mata_kuliah === "UM PTKIN";
+    source = isUmPtkin ? "um_ptkin" : "manual";
+  }
+
+  const isUmPtkin = source === "um_ptkin" || prodi === "UM PTKIN";
+  const status = isUmPtkin ? "diterima" : "kosong";
+
   return {
     id: item.id,
     _backendId: item.id,
@@ -118,7 +127,8 @@ const mapBackendSchedule = (item) => {
     nim: "-",
     numberwa: "-",
     jumlahHadir: 0,
-    status: "kosong",
+    status,
+    source,
   };
 };
 

@@ -24,6 +24,8 @@ export const createSchedule = async (data) => {
       tanggalnya: data.tanggal,
       jammulainya: data.jamMulai,
       jamselesainya: data.jamSelesai,
+      source: data.source || "manual",
+      sourcenya: data.source || "manual",
     };
     const response = await API.post("/post/formadmin", payload);
     return { success: true, data: response.data };
@@ -55,6 +57,28 @@ export const getAllSchedules = async () => {
       error.response?.data?.message ||
       error.response?.data?.error ||
       "Gagal memuat data jadwal. Silakan coba lagi.";
+    return { success: false, message };
+  }
+};
+
+/**
+ * Ambil semua jadwal kuliah (Admin - terproteksi).
+ * GET /get/jadwal
+ *
+ * @returns {Promise<{ success: boolean, data?: Array, message?: string }>}
+ */
+export const getJadwalBackend = async () => {
+  try {
+    const response = await API.get("/get/jadwal");
+    const data = Array.isArray(response.data)
+      ? response.data
+      : response.data?.message || response.data?.data || response.data?.results || [];
+    return { success: true, data };
+  } catch (error) {
+    const message =
+      error.response?.data?.message ||
+      error.response?.data?.error ||
+      "Gagal memuat data jadwal dari backend.";
     return { success: false, message };
   }
 };

@@ -1,18 +1,20 @@
 import { useContext, useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppContext } from "../context/AppContext";
+import uinLogo from "../assets/logoUIN.jpg";
 import { 
   Lock, Eye, EyeOff, LayoutDashboard, FileText, BarChart2, LogOut,
   Search, Filter, Plus, Edit, Trash2, Info, X, Check, Download, Printer, Calendar, Clock, Award,
-  Upload, FileSpreadsheet, FileDown, CheckCircle, XCircle, AlertCircle, MessageCircle, History
+  Upload, FileSpreadsheet, FileDown, CheckCircle, XCircle, AlertCircle, MessageCircle, History, TrendingUp
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import "jspdf-autotable";
 import { loginAdmin, logoutAdmin } from "../services/authService";
-import { createSchedule } from "../services/scheduleService";
+import { createSchedule, getJadwalBackend } from "../services/scheduleService";
 import { deleteEntry, deleteLogbookEntry, clearAllLogbooks, clearAllSchedules, getHistoryLogbooks, getHistorySchedules, postHistoryLogbook, postHistorySchedule } from "../services/historyService";
 import { updateBookingStatus } from "../services/bookingService";
+import { getLabPersentase } from "../services/laboratoryService";
 import Swal from "sweetalert2"
 export default function AdminPanel() {
   const { 
@@ -106,6 +108,17 @@ export default function AdminPanel() {
   const [filterHari, setFilterHari] = useState("");
   const [filterProdi, setFilterProdi] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterSource, setFilterSource] = useState("");
+
+  // UM PTKIN Form States
+  const [umLab, setUmLab] = useState("");
+  const [umTanggal, setUmTanggal] = useState("");
+  const [umSessions, setUmSessions] = useState([
+    { id: 1, label: "Sesi 1", jamMulai: "07:30", jamSelesai: "10:00", dosen: "", active: true },
+    { id: 2, label: "Sesi 2", jamMulai: "10:00", jamSelesai: "12:30", dosen: "", active: true },
+    { id: 3, label: "Sesi 3", jamMulai: "12:30", jamSelesai: "15:00", dosen: "", active: true },
+    { id: 4, label: "Sesi 4 (Sisa Waktu)", jamMulai: "15:00", jamSelesai: "15:30", dosen: "", active: true }
+  ]);
   const [selectedLogIds, setSelectedLogIds] = useState([]);
 
   
@@ -132,6 +145,100 @@ export default function AdminPanel() {
 
   // Edit Modal State
   const [editingLog, setEditingLog] = useState(null);
+
+  // Laporan Analisis Persentase Lab States
+  const [labPercentages, setLabPercentages] = useState([]);
+  const [selectedLabId, setSelectedLabId] = useState("");
+  const [periodeSemester, setPeriodeSemester] = useState("Januari - Juni 2026");
+
+  const getIndonesianDateString = (dateObj = new Date()) => {
+    const months = [
+      "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+      "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    ];
+    const day = dateObj.getDate();
+    const month = months[dateObj.getMonth()];
+    const year = dateObj.getFullYear();
+    return `${day} ${month} ${year}`;
+  };
+
+  const [backendSchedules, setBackendSchedules] = useState([]);
+
+  // Fetch percentages from backend
+  const loadLabPercentages = useCallback(async () => {
+    try {
+      const result = await getLabPersentase();
+      if (result.success && result.data && result.data.length > 0) {
+        setLabPercentages(result.data);
+        if (!selectedLabId) {
+          setSelectedLabId(result.data[0].id_lab.toString());
+        }
+      }
+    } catch (e) {
+      console.error("Gagal memuat persentase lab:", e);
+    }
+  }, [selectedLabId]);
+
+  // Fetch schedules from backend
+  const loadBackendSchedules = useCallback(async () => {
+    try {
+      const result = await getJadwalBackend();
+      if (result.success && result.data) {
+        setBackendSchedules(result.data);
+      }
+    } catch (e) {
+      console.error("Gagal memuat jadwal backend:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAdminAuthenticated) {
+      loadLabPercentages();
+      loadBackendSchedules();
+    }
+  }, [isAdminAuthenticated, loadLabPercentages, loadBackendSchedules]);
+
+  const getMappedSchedules = useCallback((items) => {
+    return items.map(item => {
+      const jamMulai = item.jam_mulai || item.jammulai || item.jammulainya || "";
+      const jamSelesai = item.jam_selesai || item.jamselesai || item.jamselesainya || "";
+      const jam = jamMulai && jamSelesai ? `${jamMulai} - ${jamSelesai}` : (item.jam || "-");
+
+      return {
+        id: item.id || item.id_jadwal || Math.random().toString(),
+        hari: item.hari || "Senin",
+        jam,
+        dosen: item.dosen || item.dosennya || "-",
+        prodi: item.prodi || item.prodinya || "Umum",
+        kelas: item.kelas || "-",
+        matkul: item.matkul || item.matkulnya || item.mata_kuliah || "-",
+        id_lab: item.id_lab || item.labnya || item.lab_id || null,
+        ruang: item.nama_lab || item.ruang || ""
+      };
+    });
+  }, []);
+
+  const page1Slots = [
+    { day: "Senin", time: "07.30 - 10.00", isFirstForDay: true, daySpan: 3 },
+    { day: "Senin", time: "10.15 - 12.45", isFirstForDay: false },
+    { day: "Senin", time: "13.00 - 15.30", isFirstForDay: false },
+    { day: "Selasa", time: "07.30 - 10.00", isFirstForDay: true, daySpan: 3 },
+    { day: "Selasa", time: "10.15 - 12.45", isFirstForDay: false },
+    { day: "Selasa", time: "13.00 - 16.20", isFirstForDay: false },
+    { day: "Rabu", time: "07.30 - 10.00", isFirstForDay: true, daySpan: 3 },
+    { day: "Rabu", time: "10.15 - 12.45", isFirstForDay: false },
+    { day: "Rabu", time: "13.00 - 15.30", isFirstForDay: false },
+    { day: "Kamis", time: "07.30 - 10.00", isFirstForDay: true, daySpan: 1 }
+  ];
+
+  const page2Slots = [
+    { day: "Kamis", time: "10.15 - 12.45", isFirstForDay: true, daySpan: 2 },
+    { day: "Kamis", time: "13.00 - 15.30", isFirstForDay: false },
+    { day: "Jumat", time: "07.30 - 10.50", isFirstForDay: true, daySpan: 3 },
+    { day: "Jumat", time: "10.15 - 12.45", isFirstForDay: false },
+    { day: "Jumat", time: "13.00 - 15.30", isFirstForDay: false }
+  ];
+
   const [editFormData, setEditFormData] = useState({
     hari: "",
     jam: "",
@@ -241,6 +348,7 @@ export default function AdminPanel() {
         tanggal: inputTanggal,
         jamMulai: inputJamMulai,
         jamSelesai: inputJamSelesai,
+        source: "manual",
       });
 if (result.success) {
   await Swal.fire({
@@ -279,6 +387,116 @@ if (result.success) {
   });
 }
     
+  };
+
+  // Handle Save UM PTKIN schedule via backend API
+  const handleSaveUmPtkin = async (e) => {
+    e.preventDefault();
+
+    if (!umLab || !umTanggal) {
+      Swal.fire({
+        icon: "warning",
+        title: "Form Belum Lengkap",
+        text: "Pilih Laboratorium dan Tanggal pelaksanaan terlebih dahulu!",
+      });
+      return;
+    }
+
+    const todayStr = getTodayDateString();
+    if (umTanggal < todayStr) {
+      Swal.fire({
+        icon: "error",
+        title: "Tanggal Tidak Valid",
+        text: "Tanggal pelaksanaan tidak boleh sebelum hari ini!",
+      });
+      return;
+    }
+
+    const activeSessions = umSessions.filter(s => s.active);
+    if (activeSessions.length === 0) {
+      Swal.fire({
+        icon: "warning",
+        title: "Sesi Belum Dipilih",
+        text: "Pilih minimal satu sesi untuk dijadwalkan!",
+      });
+      return;
+    }
+
+    const incompleteSessions = activeSessions.filter(s => !s.dosen.trim());
+    if (incompleteSessions.length > 0) {
+      Swal.fire({
+        icon: "warning",
+        title: "Nama Pengawas Kosong",
+        text: "Seluruh sesi aktif wajib diisi nama Dosen Pengawas!",
+      });
+      return;
+    }
+
+    // Cari ID lab berdasarkan nama lab yang dipilih
+    const selectedLabObj = laboratories.find(l => l.name === umLab);
+    const labId = selectedLabObj ? selectedLabObj.id : 1;
+
+    try {
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const session of activeSessions) {
+        const result = await createSchedule({
+          labId,
+          prodi: "UM PTKIN",
+          matkul: "UM PTKIN",
+          dosen: session.dosen.trim(),
+          tanggal: umTanggal,
+          jamMulai: session.jamMulai,
+          jamSelesai: session.jamSelesai,
+          source: "um_ptkin",
+        });
+
+        if (result.success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        await Swal.fire({
+          icon: failCount > 0 ? "warning" : "success",
+          title: failCount > 0 ? "Penyimpanan Sebagian Berhasil" : "Berhasil",
+          text: failCount > 0 
+            ? `Berhasil menyimpan ${successCount} sesi UM PTKIN, namun ${failCount} sesi gagal disimpan.`
+            : `Seluruh (${successCount}) sesi jadwal UM PTKIN berhasil dibuat!`,
+        });
+
+        // Reset form states
+        setUmLab("");
+        setUmTanggal("");
+        setUmSessions([
+          { id: 1, label: "Sesi 1", jamMulai: "07:30", jamSelesai: "10:00", dosen: "", active: true },
+          { id: 2, label: "Sesi 2", jamMulai: "10:00", jamSelesai: "12:30", dosen: "", active: true },
+          { id: 3, label: "Sesi 3", jamMulai: "12:30", jamSelesai: "15:00", dosen: "", active: true },
+          { id: 4, label: "Sesi 4 (Sisa Waktu)", jamMulai: "15:00", jamSelesai: "15:30", dosen: "", active: true }
+        ]);
+
+        // Refresh data dari backend
+        await refreshData();
+        
+        // Pindah ke tab data-penggunaan
+        setActiveTab("data-penggunaan");
+      } else {
+        Swal.fire({
+          icon: "error",
+          title: "Gagal",
+          text: "Gagal menyimpan jadwal UM PTKIN. Silakan coba lagi.",
+        });
+      }
+    } catch (error) {
+      Swal.fire({
+        icon: "error",
+        title: "Terjadi Kesalahan",
+        text: "Terjadi kesalahan sistem saat menyimpan jadwal.",
+      });
+    }
   };
 
   // Handle Logout — clear token dari localStorage
@@ -351,6 +569,8 @@ if (result.success) {
       tanggalnya: schedule.tanggalInput || "",
       jammulainya: jamMulai,
       jamselesainya: jamSelesai,
+      source: schedule.source || "manual",
+      sourcenya: schedule.source || "manual",
     };
   };
 
@@ -447,6 +667,12 @@ if (result.success) {
     if (!prodi) prodi = "Umum";
     if (!kelas) kelas = "-";
 
+    let source = item.source || item.sourcenya || "";
+    if (!source) {
+      const isUmPtkin = prodi === "UM PTKIN" || item.prodinya === "UM PTKIN" || item.matkul === "UM PTKIN" || item.matkulnya === "UM PTKIN" || item.mata_kuliah === "UM PTKIN";
+      source = isUmPtkin ? "um_ptkin" : "manual";
+    }
+
     return {
       id: item.id,
       _backendId: item.id,
@@ -464,6 +690,7 @@ if (result.success) {
       numberwa: "-",
       jumlahHadir: 0,
       status: "kosong",
+      source,
     };
   };
 
@@ -536,6 +763,9 @@ if (result.success) {
     const matkul = item.matkul || item.matkulnya || item.mata_kuliah || 
                    (isAlreadyMapped ? sched.matkul : (sched.matkul || sched.matkulnya || sched.mata_kuliah || "Mata Kuliah Umum"));
 
+    const isUmPtkin = prodi === "UM PTKIN" || matkul === "UM PTKIN";
+    const source = item.source || item.sourcenya || sched.source || (isUmPtkin ? "um_ptkin" : "manual");
+
     return {
       id: item.id,
       _backendId: item.id,
@@ -553,7 +783,8 @@ if (result.success) {
       nim: item.nim || "-",
       numberwa: item.no_wa || item.noWa || item.nomorWa || item.nomor_wa || item.numberwa || "-",
       jumlahHadir: parseInt(item.jumlah_hadir || item.jumlahHadir || item.jumlahPeserta || item.jumlah_peserta || 0, 10),
-      status: "terpakai"
+      status: "terpakai",
+      source
     };
   };
 
@@ -1125,8 +1356,9 @@ const handleSaveEdit = (e) => {
           ? (log.status === "dipesan" || log.status === "diterima") 
           : log.status === filterStatus) 
       : true;
+    const matchesSource = filterSource ? log.source === filterSource : true;
 
-    return matchesSearch && matchesHari && matchesProdi && matchesStatus;
+    return matchesSearch && matchesHari && matchesProdi && matchesStatus && matchesSource;
   }).sort((a, b) => {
     // FIFO: First In First Out — urutkan berdasarkan tanggal & jam paling awal dulu
     // 1. Sort by tanggalInput (YYYY-MM-DD) ascending
@@ -1783,6 +2015,7 @@ const handleSaveEdit = (e) => {
           tanggal: sched.tanggalInput || BASE_TODAY,
           jamMulai,
           jamSelesai,
+          source: "import",
         });
         if (result.success) successCount++;
         else failCount++;
@@ -1883,6 +2116,81 @@ const handleSaveEdit = (e) => {
     );
   }
 
+  // Laporan Analisis dynamic stats calculations
+  const activeLabObject = labPercentages.find(l => l.id_lab === parseInt(selectedLabId, 10)) || labPercentages[0] || {};
+
+  const totalJadwal = activeLabObject.total_jadwal_terikat_logbook !== undefined ? activeLabObject.total_jadwal_terikat_logbook : (activeLabObject.total_jadwal || 0);
+  const totalJamSemester = activeLabObject.total_jam_terpakai_semester !== undefined ? activeLabObject.total_jam_terpakai_semester : (activeLabObject.total_jam_semester || 0);
+  const waktuOperasionalSemester = activeLabObject.waktu_operasional_semester || 0;
+  const persenPenggunaan = activeLabObject.persen_penggunaan || 0;
+
+  // Hitung jam per slot (default 2.5)
+  let jamPerSlotCalc = 2.5;
+  if (totalJadwal > 0) {
+    if (activeLabObject.jam_per_minggu !== undefined) {
+      jamPerSlotCalc = activeLabObject.jam_per_minggu / totalJadwal;
+    } else {
+      jamPerSlotCalc = totalJamSemester / (totalJadwal * 16);
+    }
+  }
+
+  const jamPerSlotFormatted = (jamPerSlotCalc === 0 || isNaN(jamPerSlotCalc))
+    ? "0"
+    : (Number.isInteger(jamPerSlotCalc) 
+        ? jamPerSlotCalc.toString()
+        : jamPerSlotCalc.toFixed(1).replace('.', ','));
+
+  const persenPenggunaanFormatted = persenPenggunaan.toString().replace('.', ',');
+
+  // Map and filter schedules for this lab
+  const mappedSchedules = getMappedSchedules(backendSchedules);
+  const labSchedules = mappedSchedules.filter(s => {
+    const matchesLabId = s.id_lab !== null && s.id_lab !== undefined && parseInt(s.id_lab, 10) === parseInt(selectedLabId, 10);
+    const matchesLabName = s.ruang && s.ruang.toLowerCase() === activeLabObject.nama_lab?.toLowerCase();
+    return matchesLabId || matchesLabName;
+  });
+
+  const renderTemplateTableRows = (slots, schedulesList) => {
+    const cleanStr = (str) => str ? str.replace(/\s+/g, '').replace(/\./g, ':') : "";
+    return slots.map((slot, idx) => {
+      // Find a matching schedule in schedulesList
+      const match = schedulesList.find(s => {
+        if (s.hari !== slot.day) return false;
+        const cleanSched = cleanStr(s.jam);
+        const cleanSlot = cleanStr(slot.time);
+        return cleanSched === cleanSlot || cleanSched.startsWith(cleanSlot.split("-")[0]);
+      });
+
+      return (
+        <tr key={idx} className="border-b border-black">
+          {slot.isFirstForDay && (
+            <td 
+              rowSpan={slot.daySpan} 
+              className="border border-black text-center font-bold px-2 py-1.5 text-black text-xs w-[80px]"
+            >
+              {slot.day}
+            </td>
+          )}
+          <td className="border border-black text-center px-2 py-1.5 text-xs w-[120px] font-semibold text-black">
+            {slot.time}
+          </td>
+          <td className="border border-black px-2 py-1.5 text-xs text-black">
+            {match && match.matkul !== "-" ? match.matkul : ""}
+          </td>
+          <td className="border border-black px-2 py-1.5 text-xs text-black">
+            {match && match.dosen !== "-" ? match.dosen : ""}
+          </td>
+          <td className="border border-black text-center px-2 py-1.5 text-xs w-[60px] text-black">
+            {match && match.prodi !== "Umum" ? match.prodi : ""}
+          </td>
+          <td className="border border-black text-center px-2 py-1.5 text-xs w-[70px] text-black font-semibold">
+            {match && match.kelas !== "-" ? match.kelas : ""}
+          </td>
+        </tr>
+      );
+    });
+  };
+
   // RENDER ADMIN PANEL (Logged In state)
   return (
     <div className="flex flex-col lg:flex-row min-h-[85vh] bg-slate-50/30 rounded-3xl overflow-hidden border border-slate-100 print:border-none print:bg-white">
@@ -1967,7 +2275,7 @@ const handleSaveEdit = (e) => {
               Data Penggunaan
             </button>
 
-            <button
+             <button
               onClick={() => { setActiveTab("laporan"); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-xs font-bold transition ${
                 activeTab === "laporan"
@@ -1981,6 +2289,19 @@ const handleSaveEdit = (e) => {
             </button>
 
             <button
+              onClick={() => { setActiveTab("analisis-lab"); setIsMobileMenuOpen(false); }}
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-xs font-bold transition ${
+                activeTab === "analisis-lab"
+                  ? "text-white shadow-md"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+              }`}
+              style={{ backgroundColor: activeTab === "analisis-lab" ? "#4b8fca" : "transparent" }}
+            >
+              <TrendingUp size={16} />
+              Analisis Penggunaan
+            </button>
+
+            <button
               onClick={() => { setActiveTab("buat-jadwal"); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-xs font-bold transition ${
                 activeTab === "buat-jadwal"
@@ -1991,6 +2312,19 @@ const handleSaveEdit = (e) => {
             >
               <Plus size={16} />
               Buat Jadwal Kuliah
+            </button>
+
+            <button
+              onClick={() => { setActiveTab("um-ptkin"); setIsMobileMenuOpen(false); }}
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-xs font-bold transition ${
+                activeTab === "um-ptkin"
+                  ? "text-white shadow-md"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+              }`}
+              style={{ backgroundColor: activeTab === "um-ptkin" ? "#4b8fca" : "transparent" }}
+            >
+              <Award size={16} />
+              Input Jadwal UM PTKIN
             </button>
           </nav>
         </div>
@@ -2160,7 +2494,7 @@ const handleSaveEdit = (e) => {
 
             {/* Filter and Search Bar */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 flex-1 w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 flex-1 w-full">
                 <div className="relative">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                   <input
@@ -2218,6 +2552,20 @@ const handleSaveEdit = (e) => {
                   <option value="dipesan">Dipesan</option>
                   <option value="selesai">Selesai</option>
                   <option value="kosong">Kosong</option>
+                </select>
+
+                <select
+                  value={filterSource}
+                  onChange={(e) => {
+                    setFilterSource(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white cursor-pointer"
+                >
+                  <option value="">Semua Sumber</option>
+                  <option value="manual">Manual</option>
+                  <option value="import">Import Excel</option>
+                  <option value="um_ptkin">UM PTKIN</option>
                 </select>
               </div>
             </div>
@@ -2290,6 +2638,17 @@ const handleSaveEdit = (e) => {
                               <span className="px-1.5 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded text-[12px] font-mono font-bold">
                                 {log.kelas}
                               </span>
+                              {log.source && (
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
+                                  log.source === "um_ptkin"
+                                    ? "bg-amber-50 border border-amber-200 text-amber-700"
+                                    : log.source === "import"
+                                    ? "bg-purple-50 border border-purple-200 text-purple-700"
+                                    : "bg-teal-50 border border-teal-200 text-teal-700"
+                                }`}>
+                                  {log.source === "um_ptkin" ? "UM PTKIN" : log.source === "import" ? "Excel" : "Manual"}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -2622,6 +2981,283 @@ const handleSaveEdit = (e) => {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ==================== TAB: ANALISIS PENGGUNAAN LAB ==================== */}
+        {activeTab === "analisis-lab" && (
+          <div className="space-y-6">
+            <style dangerouslySetInnerHTML={{__html: `
+              @media screen {
+                .a4-page-preview {
+                  width: 210mm;
+                  min-height: 297mm;
+                  padding: 15mm;
+                  margin: 20px auto;
+                  border: 1px solid #e2e8f0;
+                  background-color: white;
+                  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+                }
+              }
+              @media print {
+                aside, nav, header, .print-hidden-panel, .lg\\:hidden, button, select, input, .alert-api-info {
+                  display: none !important;
+                }
+                body, html, #root {
+                  background-color: white !important;
+                  color: black !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                .a4-page-preview {
+                  width: 100% !important;
+                  min-height: auto !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  border: none !important;
+                  box-shadow: none !important;
+                  background: transparent !important;
+                  page-break-after: always !important;
+                }
+                .a4-page-preview:last-child {
+                  page-break-after: avoid !important;
+                }
+                @page {
+                  size: A4;
+                  margin: 15mm;
+                }
+              }
+            `}} />
+
+            {/* SCREEN-ONLY CONTROLS & ALERTS */}
+            <div className="print:hidden space-y-6">
+              <div>
+                <h1 className="text-2xl font-extrabold text-slate-800 font-display">Analisis Penggunaan & Laporan PDF</h1>
+                <p className="text-xs text-slate-500 mt-1">
+                  Pilih laboratorium untuk menarik data statistik secara real-time langsung dari backend dan cetak dokumen laporan resmi.
+                </p>
+              </div>
+
+              {/* Alert API Status */}
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-5 rounded-2xl text-xs space-y-2 alert-api-info">
+                <p className="font-bold flex items-center gap-1.5 text-emerald-900">
+                  <CheckCircle size={16} />
+                  Sinkronisasi API Berhasil:
+                </p>
+                <p>
+                  Tabel <strong>"2.1. Kegiatan Praktikum"</strong> di bawah ini terisi secara dinamis menggunakan data riil jadwal yang ditarik secara real-time langsung dari endpoint backend <code>GET /get/jadwal</code>.
+                </p>
+              </div>
+
+              {/* Lab Selector & Print Trigger */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-center gap-4 justify-between">
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Pilih Lab:</span>
+                  <select
+                    value={selectedLabId}
+                    onChange={(e) => setSelectedLabId(e.target.value)}
+                    className="w-full md:w-64 px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 cursor-pointer font-semibold text-slate-800"
+                  >
+                    {labPercentages.map(lab => (
+                      <option key={lab.id_lab} value={lab.id_lab}>{lab.nama_lab}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Periode:</span>
+                    <input
+                      type="text"
+                      value={periodeSemester}
+                      onChange={(e) => setPeriodeSemester(e.target.value)}
+                      className="px-3 py-1.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 font-semibold text-slate-800"
+                    />
+                  </div>
+                  <button
+                    onClick={() => window.print()}
+                    className="w-full md:w-auto px-5 py-2.5 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                    style={{ backgroundColor: "#db1b1b" }}
+                  >
+                    <Printer size={15} />
+                    Cetak Laporan PDF
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* PREVIEW CONTAINER */}
+            <div className="overflow-auto max-w-full">
+              <div className="print-only-container">
+                {/* HALAMAN 1 */}
+                <div className="a4-page-preview text-black font-sans leading-normal relative select-text">
+                  {/* Header Table */}
+                  <table className="w-full border-collapse border border-black mb-6 text-black">
+                    <tbody>
+                      <tr>
+                        <td className="border border-black p-3 w-[70%]">
+                          <div className="flex items-center gap-4">
+                            <img src={uinLogo} alt="Logo UIN" className="w-14 h-14 object-contain" />
+                            <div className="text-left font-serif leading-tight text-black">
+                              <h1 className="text-xs font-extrabold text-black uppercase tracking-wide">Pusat Laboratorium Terpadu</h1>
+                              <h2 className="text-[11px] font-extrabold text-black uppercase tracking-wide">Fakultas Sains dan Teknologi</h2>
+                              <h3 className="text-[11px] font-extrabold text-black uppercase tracking-wide">UIN Jakarta</h3>
+                              <p className="text-[8px] text-black font-medium mt-0.5">Jl. Ir. H. Juanda No. 95 Ciputat 15412 Indonesia</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="border border-black p-3 w-[30%] text-[9px] leading-relaxed text-black font-bold align-middle">
+                          <div>No. Dok: FORM-PST-PLT-006</div>
+                          <div>Tgl. Terbit: 1 Oktober 2018</div>
+                          <div>No. Revisi: 0</div>
+                          <div>Hal: 1 / 2</div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* Title */}
+                  <div className="text-center mb-6">
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-black underline mb-1">
+                      LAPORAN KEGIATAN PENGELOLAAN LABORATORIUM
+                    </h2>
+                    <h3 className="text-[10px] font-bold uppercase text-black max-w-xl mx-auto leading-relaxed">
+                      LAPORAN PENGGUNAAN LABORATORIUM DIBANDINGKAN TOTAL WAKTU OPERASIONAL YANG TERSEDIA <br />
+                      {activeLabObject.nama_lab || "Laboratorium Digital"} <br />
+                      PERIODE: {periodeSemester}
+                    </h3>
+                  </div>
+
+                  {/* Section 1 */}
+                  <div className="space-y-2 mb-6 text-black">
+                    <h4 className="text-xs font-bold text-black">1. Waktu Operasional Laboratorium</h4>
+                    <ul className="list-disc pl-5 text-[10.5px] leading-relaxed text-black font-medium">
+                      <li>Senin s.d. Kamis: 07.30 - 16.00 (8.5 jam per hari)</li>
+                      <li>Jumat: 07.30 - 16.30 (8.5 jam)</li>
+                      <li>Total hari operasional per pekan: 5 hari</li>
+                      <li>Total pekan dalam satu semester: 16 pekan</li>
+                      <li>Total waktu operasional {activeLabObject.nama_lab || "Laboratorium Digital"} selama satu semester: 680 jam</li>
+                    </ul>
+                  </div>
+
+                  {/* Section 2 */}
+                  <div className="space-y-3 text-black">
+                    <h4 className="text-xs font-bold text-black">2. Penggunaan Laboratorium</h4>
+                    <h5 className="text-[11px] font-bold text-black pl-2">2.1. Kegiatan Praktikum di {activeLabObject.nama_lab || "Laboratorium Digital"}</h5>
+                    
+                    {/* Table Page 1 (Senin s.d. Kamis) */}
+                    <table className="w-full border-collapse border border-black text-black">
+                      <thead className="bg-yellow-400">
+                        <tr className="border border-black">
+                          <th className="border border-black px-2 py-1 text-center text-[10px] font-extrabold text-black w-[80px]">Hari</th>
+                          <th className="border border-black px-2 py-1 text-center text-[10px] font-extrabold text-black w-[120px]">Jam</th>
+                          <th className="border border-black px-3 py-1 text-center text-[10px] font-extrabold text-black">Mata Kuliah</th>
+                          <th className="border border-black px-3 py-1 text-center text-[10px] font-extrabold text-black">Nama Dosen</th>
+                          <th className="border border-black px-2 py-1 text-center text-[10px] font-extrabold text-black w-[55px]">Prodi</th>
+                          <th className="border border-black px-2 py-1 text-center text-[10px] font-extrabold text-black w-[65px]">Kelas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {renderTemplateTableRows(page1Slots, labSchedules)}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* HALAMAN 2 */}
+                <div className="a4-page-preview text-black font-sans leading-normal relative select-text print:break-before-page">
+                  {/* Header Table Page 2 */}
+                  <table className="w-full border-collapse border border-black mb-6 text-black">
+                    <tbody>
+                      <tr>
+                        <td className="border border-black p-3 w-[70%]">
+                          <div className="flex items-center gap-4">
+                            <img src={uinLogo} alt="Logo UIN" className="w-14 h-14 object-contain" />
+                            <div className="text-left font-serif leading-tight text-black">
+                              <h1 className="text-xs font-extrabold text-black uppercase tracking-wide">Pusat Laboratorium Terpadu</h1>
+                              <h2 className="text-[11px] font-extrabold text-black uppercase tracking-wide">Fakultas Sains dan Teknologi</h2>
+                              <h3 className="text-[11px] font-extrabold text-black uppercase tracking-wide">UIN Jakarta</h3>
+                              <p className="text-[8px] text-black font-medium mt-0.5">Jl. Ir. H. Juanda No. 95 Ciputat 15412 Indonesia</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="border border-black p-3 w-[30%] text-[9px] leading-relaxed text-black font-bold align-middle">
+                          <div>No. Dok: FORM-PST-PLT-006</div>
+                          <div>Tgl. Terbit: 1 Oktober 2018</div>
+                          <div>No. Revisi: 0</div>
+                          <div>Hal: 2 / 2</div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {/* Table Page 2 (Jumat) */}
+                  <div className="space-y-4 text-black mb-6">
+                    <table className="w-full border-collapse border border-black text-black">
+                      <thead className="bg-yellow-400">
+                        <tr className="border border-black">
+                          <th className="border border-black px-2 py-1 text-center text-[10px] font-extrabold text-black w-[80px]">Hari</th>
+                          <th className="border border-black px-2 py-1 text-center text-[10px] font-extrabold text-black w-[120px]">Jam</th>
+                          <th className="border border-black px-3 py-1 text-center text-[10px] font-extrabold text-black">Mata Kuliah</th>
+                          <th className="border border-black px-3 py-1 text-center text-[10px] font-extrabold text-black">Nama Dosen</th>
+                          <th className="border border-black px-2 py-1 text-center text-[10px] font-extrabold text-black w-[55px]">Prodi</th>
+                          <th className="border border-black px-2 py-1 text-center text-[10px] font-extrabold text-black w-[65px]">Kelas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {renderTemplateTableRows(page2Slots, labSchedules)}
+                      </tbody>
+                    </table>
+
+                    {/* Math calculations description */}
+                    <div className="pt-2 text-[10.5px] leading-relaxed text-black font-medium space-y-1">
+                      <p className="font-bold">Waktu penggunaan laboratorium</p>
+                      <p>
+                        Kegiatan praktikum: {totalJadwal} x {jamPerSlotFormatted} jam x 16 pekan = {totalJamSemester} jam
+                      </p>
+                      <p className="font-bold uppercase tracking-wider">
+                        TOTAL : {totalJamSemester} Jam
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Section 3 */}
+                  <div className="space-y-2 mb-10 text-black">
+                    <h4 className="text-xs font-bold text-black">3. ANALISIS</h4>
+                    <div className="text-[10.5px] leading-relaxed text-black pl-2 font-medium">
+                      <p className="mb-2">Persentase penggunaan laboratorium terhadap total waktu operasional selama satu semester:</p>
+                      <p className="font-bold bg-slate-50 border border-slate-100 p-2.5 rounded-lg inline-block text-[11px] text-slate-800 print:bg-white print:border-none print:p-0">
+                        {totalJamSemester} jam / {waktuOperasionalSemester} jam x 100% = {persenPenggunaanFormatted} %
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Signature block */}
+                  <div className="text-right text-[10.5px] text-black pr-4 space-y-12">
+                    <div className="font-medium text-black">
+                      Jakarta, {getIndonesianDateString()}
+                    </div>
+
+                    <div className="grid grid-cols-2 text-center text-black leading-relaxed font-semibold">
+                      <div>
+                        <p>Mengetahui,</p>
+                        <p className="mb-14">Kepala PLT</p>
+                        <p className="underline font-bold">Dr. Iwan Aminudin, S.Hut., M.Si</p>
+                        <p className="font-medium text-[9.5px]">NIP. 19700209 201411 1 001</p>
+                      </div>
+                      <div>
+                        <p className="invisible">Jakarta,</p>
+                        <p className="mb-14">PLP,</p>
+                        <p className="underline font-bold">Ade Candra, S.Pd</p>
+                        <p className="font-medium text-[9.5px]">NIP. 197205112009101002</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -3035,6 +3671,180 @@ const handleSaveEdit = (e) => {
                   </form>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ==================== TAB: INPUT JADWAL UM PTKIN ==================== */}
+        {activeTab === "um-ptkin" && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div>
+              <h1 className="text-2xl font-extrabold text-slate-800 font-display flex items-center gap-2">
+                <Award className="text-amber-500" size={26} />
+                Penjadwalan UM PTKIN
+              </h1>
+              <p className="text-xs text-slate-500 mt-1">
+                Modul khusus untuk menjadwalkan Ujian Masuk PTKIN secara otomatis dalam 4 sesi terpisah.
+              </p>
+            </div>
+
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden">
+              {/* Header Banner */}
+              <div className="p-6 text-white flex items-center gap-3" style={{ backgroundColor: "#4b8fca" }}>
+                <div className="p-2 bg-white/10 rounded-xl">
+                  <Award size={22} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base font-display">Form Otomatisasi Jadwal UM PTKIN</h3>
+                  <p className="text-[10px] text-white/80">
+                    Sistem akan otomatis membuat jadwal untuk seluruh sesi aktif di laboratorium dan tanggal terpilih
+                  </p>
+                </div>
+              </div>
+
+              {/* Form Content */}
+              <form onSubmit={handleSaveUmPtkin} className="p-6 space-y-6">
+                {/* Lab & Tanggal Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      Pilih Laboratorium
+                    </label>
+                    <select
+                      required
+                      value={umLab}
+                      onChange={(e) => setUmLab(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50 cursor-pointer"
+                    >
+                      <option value="">-- Pilih Laboratorium --</option>
+                      {laboratories.map((lab) => (
+                        <option key={lab.id} value={lab.name}>
+                          {lab.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      Pilih Tanggal Pelaksanaan
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={umTanggal}
+                      onChange={(e) => setUmTanggal(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50"
+                    />
+                  </div>
+                </div>
+
+                {/* Info Card / Autofilled attributes preview */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <span className="font-bold text-slate-400 block uppercase tracking-wider text-[9px]">Program Studi</span>
+                    <span className="font-extrabold text-slate-700 text-sm mt-0.5 block">UM PTKIN (Otomatis)</span>
+                  </div>
+                  <div>
+                    <span className="font-bold text-slate-400 block uppercase tracking-wider text-[9px]">Mata Kuliah</span>
+                    <span className="font-extrabold text-slate-700 text-sm mt-0.5 block">UM PTKIN (Otomatis)</span>
+                  </div>
+                  <div>
+                    <span className="font-bold text-slate-400 block uppercase tracking-wider text-[9px]">Kelas</span>
+                    <span className="font-extrabold text-slate-700 text-sm mt-0.5 block">
+                      {umLab ? umLab : "Nama Lab Terpilih (Otomatis)"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Sesi List & Supervisor Inputs */}
+                <div className="space-y-4">
+                  <h4 className="font-bold text-xs text-slate-500 uppercase tracking-wider">
+                    Daftar Sesi Ujian & Dosen Pengawas
+                  </h4>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    {umSessions.map((session, idx) => (
+                      <div
+                        key={session.id}
+                        className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                          session.active 
+                            ? "bg-white border-slate-200 shadow-sm" 
+                            : "bg-slate-50/50 border-slate-100 opacity-60"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={session.active}
+                            onChange={(e) => {
+                              const updated = [...umSessions];
+                              updated[idx].active = e.target.checked;
+                              setUmSessions(updated);
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <div>
+                            <span className="font-bold text-slate-800 text-sm block">{session.label}</span>
+                            <span className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                              <Clock size={12} className="text-slate-400" />
+                              {session.jamMulai} - {session.jamSelesai}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 max-w-md">
+                          <input
+                            type="text"
+                            required={session.active}
+                            disabled={!session.active}
+                            placeholder="Nama Dosen Pengawas..."
+                            value={session.dosen}
+                            onChange={(e) => {
+                              const updated = [...umSessions];
+                              updated[idx].dosen = e.target.value;
+                              setUmSessions(updated);
+                            }}
+                            className={`w-full px-4 py-2.5 rounded-xl border focus:outline-none text-xs transition ${
+                              session.active
+                                ? "border-slate-200 focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white"
+                                : "border-slate-100 bg-slate-100/50 text-slate-400 cursor-not-allowed"
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Submit / Action buttons */}
+                <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUmLab("");
+                      setUmTanggal("");
+                      setUmSessions([
+                        { id: 1, label: "Sesi 1", jamMulai: "07:30", jamSelesai: "10:00", dosen: "", active: true },
+                        { id: 2, label: "Sesi 2", jamMulai: "10:00", jamSelesai: "12:30", dosen: "", active: true },
+                        { id: 3, label: "Sesi 3", jamMulai: "12:30", jamSelesai: "15:00", dosen: "", active: true },
+                        { id: 4, label: "Sesi 4 (Sisa Waktu)", jamMulai: "15:00", jamSelesai: "15:30", dosen: "", active: true }
+                      ]);
+                      setActiveTab("data-penggunaan");
+                    }}
+                    className="px-5 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-bold transition text-xs cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-3 text-white rounded-xl font-bold transition text-xs shadow-md hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                    style={{ backgroundColor: "#4b8fca" }}
+                  >
+                    Simpan Jadwal UM PTKIN
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

@@ -52,3 +52,26 @@ export const getLabs = async () => {
     return fallbackLabs;
   }
 };
+
+/**
+ * Fetch data persentase penggunaan laboratorium dari backend.
+ * GET /get/lab/persentase
+ */
+export const getLabPersentase = async () => {
+  try {
+    const response = await API.get("/get/lab/persentase");
+    const data = response.data;
+    if (data && data.message && Array.isArray(data.message)) {
+      return { success: true, data: data.message };
+    }
+    return { success: false, message: "Format response tidak sesuai.", data: [] };
+  } catch (error) {
+    console.error("Gagal fetch persentase lab:", error);
+    const msg =
+      error.response?.data?.message ||
+      error.response?.data?.massage ||
+      error.response?.data?.error ||
+      "Gagal memuat persentase lab.";
+    return { success: false, message: msg, data: [] };
+  }
+};
