@@ -160,4 +160,22 @@ export const postHistorySchedule = async (payload) => {
   }
 };
 
+/**
+ * Arsip jadwal ke riwayat backend.
+ * POST /post/history/archive/:id
+ */
+export const archiveSchedule = async (id) => {
+  try {
+    const response = await API.post(`/post/history/archive/${id}`);
+    return { success: true, data: response.data };
+  } catch (error) {
+    const message =
+      error.response?.data?.message ||
+      error.response?.data?.massage ||
+      error.response?.data?.error ||
+      "Gagal mengarsipkan jadwal.";
+    return { success: false, message };
+  }
+};
+
 

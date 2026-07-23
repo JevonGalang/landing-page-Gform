@@ -26,6 +26,7 @@ export const createSchedule = async (data) => {
       jamselesainya: data.jamSelesai,
       source: data.source || "manual",
       sourcenya: data.source || "manual",
+      is_auto: data.is_auto ?? false,
     };
     const response = await API.post("/post/formadmin", payload);
     return { success: true, data: response.data };

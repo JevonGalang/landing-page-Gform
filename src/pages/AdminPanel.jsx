@@ -12,8 +12,8 @@ import { jsPDF } from "jspdf";
 import "jspdf-autotable";
 import { loginAdmin, logoutAdmin } from "../services/authService";
 import { createSchedule, getJadwalBackend } from "../services/scheduleService";
-import { deleteEntry, deleteLogbookEntry, clearAllLogbooks, clearAllSchedules, getHistoryLogbooks, getHistorySchedules, postHistoryLogbook, postHistorySchedule } from "../services/historyService";
-import { updateBookingStatus } from "../services/bookingService";
+import { deleteEntry, deleteLogbookEntry, clearAllLogbooks, clearAllSchedules, getHistoryLogbooks, getHistorySchedules, postHistoryLogbook, postHistorySchedule, archiveSchedule } from "../services/historyService";
+import { updateBookingStatus, submitBooking } from "../services/bookingService";
 import { getLabPersentase } from "../services/laboratoryService";
 import Swal from "sweetalert2"
 export default function AdminPanel() {
@@ -69,6 +69,9 @@ export default function AdminPanel() {
     sesi3: "",
     sesi4: "",
   });
+
+  // Query parameter state for laboratory percentage calculation
+  const [persentaseOnlyAuto, setPersentaseOnlyAuto] = useState(true);
 
   // Helper to check if lab is locked (Podcast, ELC, Riset)
   const isLockedLab = (labName) => {
@@ -176,7 +179,7 @@ export default function AdminPanel() {
   // Fetch percentages from backend
   const loadLabPercentages = useCallback(async () => {
     try {
-      const result = await getLabPersentase();
+      const result = await getLabPersentase(persentaseOnlyAuto);
       if (result.success && result.data && result.data.length > 0) {
         setLabPercentages(result.data);
         if (!selectedLabId) {
@@ -186,7 +189,7 @@ export default function AdminPanel() {
     } catch (e) {
       console.error("Gagal memuat persentase lab:", e);
     }
-  }, [selectedLabId]);
+  }, [selectedLabId, persentaseOnlyAuto]);
 
   // Fetch schedules from backend
   const loadBackendSchedules = useCallback(async () => {
@@ -339,13 +342,14 @@ export default function AdminPanel() {
 
       const selectedLabObj = laboratories.find(l => l.name === inputLab);
       const labId = selectedLabObj ? selectedLabObj.id : 1;
+      const labCapacity = selectedLabObj?.capacity || 36;
 
       // Define 4 UM PTKIN sessions (07:30 to 15:30)
       const sessions = [
-        { jamMulai: "07:30", jamSelesai: "10:00", dosen: umSupervisors.sesi1 || inputDosen || "Dosen Pengawas Sesi 1" },
-        { jamMulai: "10:00", jamSelesai: "12:30", dosen: umSupervisors.sesi2 || inputDosen || "Dosen Pengawas Sesi 2" },
-        { jamMulai: "12:30", jamSelesai: "15:00", dosen: umSupervisors.sesi3 || inputDosen || "Dosen Pengawas Sesi 3" },
-        { jamMulai: "15:00", jamSelesai: "15:30", dosen: umSupervisors.sesi4 || inputDosen || "Dosen Pengawas Sesi 4" },
+        { jamMulai: "07:30", jamSelesai: "10:00", dosen: umSupervisors.sesi1 || "Dosen Pengawas Sesi 1" },
+        { jamMulai: "10:00", jamSelesai: "12:30", dosen: umSupervisors.sesi2 || "Dosen Pengawas Sesi 2" },
+        { jamMulai: "12:30", jamSelesai: "15:00", dosen: umSupervisors.sesi3 || "Dosen Pengawas Sesi 3" },
+        { jamMulai: "15:00", jamSelesai: "15:30", dosen: umSupervisors.sesi4 || "Dosen Pengawas Sesi 4" },
       ];
 
       let successCount = 0;
@@ -357,15 +361,48 @@ export default function AdminPanel() {
             labId,
             prodi: "UM PTKIN",
             matkul: "UM PTKIN",
-            kelas: inputLab,
+            kelas: "UMPTKIN",
             dosen: session.dosen,
             tanggal: inputTanggal,
             jamMulai: session.jamMulai,
             jamSelesai: session.jamSelesai,
             source: "um_ptkin",
+            is_auto: false,
           });
-          if (result.success) successCount++;
-          else failCount++;
+          if (result.success) {
+            // Ambil ID jadwal yang baru dibuat dari response backend (termasuk dari message.insertId)
+            const newScheduleId = result.data?.message?.insertId || result.data?.data?.id || result.data?.id || result.data?.insertId || null;
+            console.log(`[UM PTKIN] Jadwal sesi ${session.jamMulai}-${session.jamSelesai} dibuat, ID:`, newScheduleId);
+
+            if (newScheduleId) {
+              // Auto-submit logbook entry untuk sesi UM PTKIN
+              try {
+                const bookingResult = await submitBooking({
+                  scheduleId: newScheduleId,
+                  namaKetua: "Admin UMPTKIN",
+                  nim: "000",
+                  kelas: "UMPTKIN",
+                  jumlahPeserta: labCapacity,
+                  nomorWa: "-",
+                });
+                console.log(`[UM PTKIN] Logbook sesi ${session.jamMulai} dibuat:`, bookingResult);
+
+                if (bookingResult.success) {
+                  // Auto-approve logbook (status → diterima) (termasuk dari message.insertId)
+                  const logbookId = bookingResult.data?.message?.insertId || bookingResult.data?.data?.id || bookingResult.data?.id || bookingResult.data?.insertId || null;
+                  if (logbookId) {
+                    const approveResult = await updateBookingStatus(logbookId, "diterima");
+                    console.log(`[UM PTKIN] Logbook ID ${logbookId} di-approve:`, approveResult);
+                  }
+                }
+              } catch (bookingErr) {
+                console.warn(`[UM PTKIN] Gagal auto-submit logbook sesi ${session.jamMulai}:`, bookingErr);
+              }
+            }
+            successCount++;
+          } else {
+            failCount++;
+          }
         } catch {
           failCount++;
         }
@@ -445,6 +482,7 @@ export default function AdminPanel() {
         jamMulai: inputJamMulai,
         jamSelesai: inputJamSelesai,
         source: "manual",
+        is_auto: false,
       });
 if (result.success) {
   await Swal.fire({
@@ -531,6 +569,7 @@ if (result.success) {
     // Cari ID lab berdasarkan nama lab yang dipilih
     const selectedLabObj = laboratories.find(l => l.name === umLab);
     const labId = selectedLabObj ? selectedLabObj.id : 1;
+    const labCapacity = selectedLabObj?.capacity || 36;
 
     try {
       let successCount = 0;
@@ -546,9 +585,39 @@ if (result.success) {
           jamMulai: session.jamMulai,
           jamSelesai: session.jamSelesai,
           source: "um_ptkin",
+          is_auto: false,
         });
 
         if (result.success) {
+          // Ambil ID jadwal yang baru dibuat dari response backend (termasuk dari message.insertId)
+          const newScheduleId = result.data?.message?.insertId || result.data?.data?.id || result.data?.id || result.data?.insertId || null;
+          console.log(`[UM PTKIN Grid] Jadwal sesi ${session.jamMulai}-${session.jamSelesai} dibuat, ID:`, newScheduleId);
+
+          if (newScheduleId) {
+            // Auto-submit logbook entry untuk sesi UM PTKIN
+            try {
+              const bookingResult = await submitBooking({
+                scheduleId: newScheduleId,
+                namaKetua: "Admin UMPTKIN",
+                nim: "000",
+                kelas: "UMPTKIN",
+                jumlahPeserta: labCapacity,
+                nomorWa: "-",
+              });
+              console.log(`[UM PTKIN Grid] Logbook sesi ${session.jamMulai} dibuat:`, bookingResult);
+
+              if (bookingResult.success) {
+                // Auto-approve logbook (status → diterima) (termasuk dari message.insertId)
+                const logbookId = bookingResult.data?.message?.insertId || bookingResult.data?.data?.id || bookingResult.data?.id || bookingResult.data?.insertId || null;
+                if (logbookId) {
+                  const approveResult = await updateBookingStatus(logbookId, "diterima");
+                  console.log(`[UM PTKIN Grid] Logbook ID ${logbookId} di-approve:`, approveResult);
+                }
+              }
+            } catch (bookingErr) {
+              console.warn(`[UM PTKIN Grid] Gagal auto-submit logbook sesi ${session.jamMulai}:`, bookingErr);
+            }
+          }
           successCount++;
         } else {
           failCount++;
@@ -764,10 +833,19 @@ if (result.success) {
     if (!kelas) kelas = "-";
 
     let source = item.source || item.sourcenya || "";
-    if (!source) {
-      const isUmPtkin = prodi === "UM PTKIN" || item.prodinya === "UM PTKIN" || item.matkul === "UM PTKIN" || item.matkulnya === "UM PTKIN" || item.mata_kuliah === "UM PTKIN";
-      source = isUmPtkin ? "um_ptkin" : "manual";
+    const isUmPtkin = prodi === "UM PTKIN" || item.prodinya === "UM PTKIN" || item.matkul === "UM PTKIN" || item.matkulnya === "UM PTKIN" || item.mata_kuliah === "UM PTKIN" || source === "um_ptkin";
+    
+    if (isUmPtkin) {
+      source = "um_ptkin";
+    } else if (!source) {
+      if (item.is_auto === 1 || item.is_auto === true || item.is_auto === "1") {
+        source = "import";
+      } else {
+        source = "manual";
+      }
     }
+
+    const isAutoVal = item.is_auto === 1 || item.is_auto === true || item.is_auto === "1" ? 1 : 0;
 
     return {
       id: item.id,
@@ -787,6 +865,7 @@ if (result.success) {
       jumlahHadir: 0,
       status: "kosong",
       source,
+      is_auto: isAutoVal,
     };
   };
 
@@ -900,58 +979,29 @@ if (result.success) {
     if (!confirmation.isConfirmed) return;
 
     try {
-      // 1. Post to backend history
-      let postResult;
-      if (item._type === "logbook" || item.status === "dipesan" || item.status === "diterima" || item.status === "selesai") {
-        // Post the parent schedule details first
-        const schedPostResult = await postHistorySchedule(formatSchedulePayload(item));
-        if (!schedPostResult.success) {
-          throw new Error(schedPostResult.message || "Gagal menyimpan jadwal induk ke riwayat backend.");
-        }
-        
-        // Post the logbook details second
-        postResult = await postHistoryLogbook(formatLogbookPayload(item));
-      } else {
-        postResult = await postHistorySchedule(formatSchedulePayload(item));
-      }
-
-      if (!postResult.success) {
-        throw new Error(postResult.message || "Gagal menyimpan ke riwayat backend.");
-      }
-
-      // 2. Delete from active backend database
-      let deleteResult;
       if (item._backendId) {
-        deleteResult = (item._type === "logbook" || item.status === "dipesan" || item.status === "diterima" || item.status === "selesai")
-          ? await deleteLogbookEntry(item._backendId)
-          : await deleteEntry(item._backendId);
-      } else {
-        deleteResult = { success: true };
-      }
-
-      if (deleteResult.success) {
-        // Jika offline/lokal saja
-        if (!item._backendId) {
-          setMySchedules(mySchedules.filter((s) => s.id !== item.id));
+        const scheduleIdToArchive = item._type === "logbook" ? item._scheduleId : item._backendId;
+        if (!scheduleIdToArchive) {
+          throw new Error("ID Jadwal Induk tidak ditemukan.");
         }
-
-        await Swal.fire({
-          icon: "success",
-          title: "Berhasil",
-          text: "Data berhasil dipindahkan ke riwayat laporan.",
-          confirmButtonColor: "#3b82f6"
-        });
-
-        await refreshData();
-        await refreshHistoryData();
+        const archiveResult = await archiveSchedule(scheduleIdToArchive);
+        if (!archiveResult.success) {
+          throw new Error(archiveResult.message || "Gagal mengarsipkan data di server.");
+        }
       } else {
-        Swal.fire({
-          icon: "error",
-          title: "Gagal Menghapus Data Aktif",
-          text: `Gagal: ${deleteResult.message}`,
-          confirmButtonColor: "#3b82f6"
-        });
+        // Jika offline/lokal saja
+        setMySchedules(mySchedules.filter((s) => s.id !== item.id));
       }
+
+      await Swal.fire({
+        icon: "success",
+        title: "Berhasil",
+        text: "Data berhasil dipindahkan ke riwayat laporan.",
+        confirmButtonColor: "#3b82f6"
+      });
+
+      await refreshData();
+      await refreshHistoryData();
     } catch (err) {
       Swal.fire({
         icon: "error",
@@ -990,7 +1040,13 @@ if (result.success) {
             if (item._type === "logbook" || item.status === "dipesan" || item.status === "diterima" || item.status === "selesai") {
               const schedHistRes = await postHistorySchedule(formatSchedulePayload(item));
               if (schedHistRes.success) {
-                await postHistoryLogbook(formatLogbookPayload(item));
+                const newHistSchedId = schedHistRes.data?.newHistoryScheduleId || schedHistRes.data?.insertId || schedHistRes.data?.id || schedHistRes.data?.message?.newHistoryScheduleId || schedHistRes.data?.message?.id;
+                const logbookPayload = formatLogbookPayload(item);
+                if (newHistSchedId) {
+                  logbookPayload.schadules = parseInt(newHistSchedId, 10);
+                  logbookPayload.schadule = parseInt(newHistSchedId, 10);
+                }
+                await postHistoryLogbook(logbookPayload);
               }
             } else {
               await postHistorySchedule(formatSchedulePayload(item));
@@ -1022,15 +1078,7 @@ if (result.success) {
         });
       }
     } else {
-      try {
-        if (item && (item._type === "logbook" || item.status === "dipesan" || item.status === "diterima" || item.status === "selesai")) {
-          await postHistoryLogbook(formatLogbookPayload(item));
-        } else if (item) {
-          await postHistorySchedule(formatSchedulePayload(item));
-        }
-      } catch (histErr) {
-        console.error("Gagal mencatat riwayat lokal:", histErr);
-      }
+      // Data lokal tidak perlu disinkronkan ke riwayat backend karena tidak memiliki ID backend aktif
       setMySchedules(mySchedules.filter((s) => s.id !== id));
       await refreshHistoryData();
 
@@ -1399,30 +1447,50 @@ const handleSaveEdit = (e) => {
     });
 
     if (confirmation.isConfirmed) {
+      let bulkDeleteSuccess = true;
       // Simpan logbook/jadwal terpilih ke history backend sebelum dihapus
       for (const s of mySchedules) {
         if (selectedLogIds.includes(s.id)) {
           try {
+            // 1. Simpan ke history
             if (s._type === "logbook" || s.status === "dipesan" || s.status === "diterima" || s.status === "selesai") {
               const schedHistRes = await postHistorySchedule(formatSchedulePayload(s));
               if (schedHistRes.success) {
-                await postHistoryLogbook(formatLogbookPayload(s));
+                const newHistSchedId = schedHistRes.data?.newHistoryScheduleId || schedHistRes.data?.insertId || schedHistRes.data?.id || schedHistRes.data?.message?.newHistoryScheduleId || schedHistRes.data?.message?.id;
+                const logbookPayload = formatLogbookPayload(s);
+                if (newHistSchedId) {
+                  logbookPayload.schadules = parseInt(newHistSchedId, 10);
+                  logbookPayload.schadule = parseInt(newHistSchedId, 10);
+                }
+                await postHistoryLogbook(logbookPayload);
               }
             } else {
               await postHistorySchedule(formatSchedulePayload(s));
             }
+
+            // 2. Hapus data aktif dari server
+            if (s._backendId) {
+              const deleteResult = (s._type === "logbook" || s.status === "dipesan" || s.status === "diterima" || s.status === "selesai")
+                ? await deleteLogbookEntry(s._backendId)
+                : await deleteEntry(s._backendId);
+              if (!deleteResult.success) {
+                bulkDeleteSuccess = false;
+              }
+            }
           } catch (histErr) {
-            console.error("Gagal mencatat riwayat bulk delete:", histErr);
+            console.error("Gagal mencatat atau menghapus riwayat bulk delete:", histErr);
+            bulkDeleteSuccess = false;
           }
         }
       }
       setMySchedules(mySchedules.filter(s => !selectedLogIds.includes(s.id)));
       setSelectedLogIds([]);
+      await refreshData();
       await refreshHistoryData();
       Swal.fire({
-        icon: "success",
-        title: "Berhasil",
-        text: "✅ Berhasil menghapus log terpilih.",
+        icon: bulkDeleteSuccess ? "success" : "warning",
+        title: bulkDeleteSuccess ? "Berhasil" : "Selesai dengan Peringatan",
+        text: bulkDeleteSuccess ? "✅ Berhasil menghapus log terpilih dari server." : "⚠️ Beberapa data gagal dihapus dari server.",
         confirmButtonColor: "#3b82f6"
       });
     }
@@ -1493,10 +1561,17 @@ const handleSaveEdit = (e) => {
     s => !bookedScheduleIds.has(s.id) && !bookedScheduleIds.has(s._backendId)
   );
 
-  // Jadwal yang ada di logbook mendapatkan status "terpakai", sedangkan yang tidak ada mendapatkan status "tidak terpakai"
+  // Jadwal yang ada di logbook mendapatkan status "terpakai", sedangkan yang tidak ada mendapatkan status "tidak terpakai".
+  // Khusus untuk UM PTKIN, statusnya otomatis selalu dianggap "terpakai" karena agenda ujian resmi.
   const allSchedulesForReport = [
     ...mappedHistLogbooks.map(lb => ({ ...lb, status: "terpakai" })),
-    ...unbookedSchedules.map(s => ({ ...s, status: "tidak terpakai" }))
+    ...unbookedSchedules.map(s => {
+      const isUmPtkin = s.source === "um_ptkin" || s.prodi === "UM PTKIN";
+      return {
+        ...s,
+        status: isUmPtkin ? "terpakai" : "tidak terpakai"
+      };
+    })
   ];
 
   const reportFilteredUsage = allSchedulesForReport.filter((log) => {
@@ -1538,6 +1613,18 @@ const handleSaveEdit = (e) => {
 
     return matchesDate && matchesType && matchesStatus;
   });
+
+  // Debug data laporan untuk kebutuhan analisis backend/frontend
+  console.log("=== DEBUG DATA LAPORAN ===");
+  console.log("historySchedules (Raw Riwayat Jadwal):", historySchedules);
+  console.log("historyLogbooks (Raw Riwayat Logbook):", historyLogbooks);
+  console.log("mySchedules (Raw Jadwal Aktif):", mySchedules);
+  console.log("mappedHistSchedules (Jadwal Riwayat Terpetakan):", mappedHistSchedules);
+  console.log("mappedHistLogbooks (Logbook Riwayat Terpetakan):", mappedHistLogbooks);
+  console.log("unbookedSchedules (Jadwal Tanpa Logbook):", unbookedSchedules);
+  console.log("allSchedulesForReport (Gabungan Riwayat + Aktif):", allSchedulesForReport);
+  console.log("reportFilteredUsage (Data Laporan Terfilter yang Tampil):", reportFilteredUsage);
+  console.log("==========================");
 
   // Export Report to Excel (.xlsx) using SheetJS
   const exportExcel = () => {
@@ -2112,6 +2199,7 @@ const handleSaveEdit = (e) => {
           jamMulai,
           jamSelesai,
           source: "import",
+          is_auto: true,
         });
         if (result.success) successCount++;
         else failCount++;
@@ -2567,7 +2655,7 @@ const handleSaveEdit = (e) => {
                   <AlertCircle size={18} />
                 </div>
                 <div>
-                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Dipesan (Ada Kegiatan)</p>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Sedang Ada Kegiatan Berlangsung</p>
                   <h3 className="text-lg font-bold text-slate-800 font-display mt-0.5">
                     {mySchedules.filter(s => s.status === "dipesan" || s.status === "diterima").length}
                   </h3>
@@ -2645,9 +2733,9 @@ const handleSaveEdit = (e) => {
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white cursor-pointer"
                 >
                   <option value="">Semua Status</option>
-                  <option value="dipesan">Dipesan</option>
-                  <option value="selesai">Selesai</option>
-                  <option value="kosong">Kosong</option>
+                  <option value="dipesan">Sedang Berlangsung</option>
+                  <option value="selesai">Sesi Berakhir</option>
+                  <option value="kosong">Kosong (Tersedia)</option>
                 </select>
 
                 <select
@@ -2738,11 +2826,11 @@ const handleSaveEdit = (e) => {
                                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
                                   log.source === "um_ptkin"
                                     ? "bg-amber-50 border border-amber-200 text-amber-700"
-                                    : log.source === "import"
-                                    ? "bg-purple-50 border border-purple-200 text-purple-700"
-                                    : "bg-teal-50 border border-teal-200 text-teal-700"
+                                    : log.source === "import" || log.is_auto === 1
+                                    ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                                    : "bg-blue-50 border border-blue-200 text-blue-700"
                                 }`}>
-                                  {log.source === "um_ptkin" ? "UM PTKIN" : log.source === "import" ? "Excel" : "Manual"}
+                                  {log.source === "um_ptkin" ? "UM PTKIN" : (log.source === "import" || log.is_auto === 1) ? "XLSX" : "Manual"}
                                 </span>
                               )}
                             </div>
@@ -2775,16 +2863,16 @@ const handleSaveEdit = (e) => {
                           </td>
                           <td className="px-6 py-4 text-center">
                             {log.status === "selesai" ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-700 rounded-full text-[10px] font-bold">
-                                <CheckCircle size={11} /> Selesai (Kegiatan Berakhir)
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 border border-red-200 text-red-700 rounded-full text-[10px] font-bold">
+                                <XCircle size={11} className="text-red-500" /> Sesi Berakhir
                               </span>
                             ) : log.status === "dipesan" ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-full text-[10px] font-bold">
-                                <AlertCircle size={11} /> Dipesan (Ada Kegiatan)
+                                <AlertCircle size={11} /> Sedang Ada Kegiatan Berlangsung
                               </span>
                             ) : log.status === "diterima" ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full text-[10px] font-bold">
-                                <CheckCircle size={11} /> Diterima (Disetujui)
+                                <CheckCircle size={11} /> Terjadwal (Sudah Di Setujui)
                               </span>
                             ) : log.status === "ditolak" ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 border border-red-200 text-red-700 rounded-full text-[10px] font-bold">
@@ -3150,18 +3238,33 @@ const handleSaveEdit = (e) => {
               </div>
 
               {/* Lab Selector & Print Trigger */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row items-center gap-4 justify-between">
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Pilih Lab:</span>
-                  <select
-                    value={selectedLabId}
-                    onChange={(e) => setSelectedLabId(e.target.value)}
-                    className="w-full md:w-64 px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 cursor-pointer font-semibold text-slate-800"
-                  >
-                    {labPercentages.map(lab => (
-                      <option key={lab.id_lab} value={lab.id_lab}>{lab.nama_lab}</option>
-                    ))}
-                  </select>
+              <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col lg:flex-row items-center gap-4 justify-between">
+                <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Pilih Lab:</span>
+                    <select
+                      value={selectedLabId}
+                      onChange={(e) => setSelectedLabId(e.target.value)}
+                      className="w-full md:w-64 px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 cursor-pointer font-semibold text-slate-800"
+                    >
+                      {labPercentages.map(lab => (
+                        <option key={lab.id_lab} value={lab.id_lab}>{lab.nama_lab}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
+                    <input
+                      type="checkbox"
+                      id="persentaseOnlyAutoCheck"
+                      checked={!persentaseOnlyAuto}
+                      onChange={(e) => setPersentaseOnlyAuto(!e.target.checked)}
+                      className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <label htmlFor="persentaseOnlyAutoCheck" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                      Hitung Semua Jadwal (XLSX + Manual)
+                    </label>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto">
@@ -3665,15 +3768,18 @@ const handleSaveEdit = (e) => {
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                          {isUmPtkinMode ? "Dosen Pengawas (Opsional Utm)" : "Nama Dosen Pengampu"}
+                          {isUmPtkinMode ? "Dosen Pengawas (Terblokir)" : "Nama Dosen Pengampu"}
                         </label>
                         <input
                           type="text"
                           required={!isUmPtkinMode}
-                          placeholder={isUmPtkinMode ? "Contoh: Dr. Nenny (atau isi per sesi di bawah)" : "Contoh: Dr. Irwan, M.T."}
-                          value={inputDosen}
+                          disabled={isUmPtkinMode}
+                          placeholder={isUmPtkinMode ? "Silakan isi per sesi di bawah..." : "Contoh: Dr. Irwan, M.T."}
+                          value={isUmPtkinMode ? "Diisi per Sesi di Bawah" : inputDosen}
                           onChange={(e) => setInputDosen(e.target.value)}
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50"
+                          className={`w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition ${
+                            isUmPtkinMode ? "bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 font-semibold" : "bg-slate-50/50"
+                          }`}
                         />
                       </div>
                     </div>

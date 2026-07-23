@@ -41,6 +41,61 @@ const parseDateToISO = (dateStr) => {
 };
 
 /**
+ * Helper: Parse schedule date and time into start and end Date objects.
+ */
+const getScheduleTimeRange = (tanggalInput, jam) => {
+  if (!tanggalInput) return { start: null, end: null };
+  try {
+    const [year, month, day] = tanggalInput.split("-").map(Number);
+    let startHour = 7;
+    let startMinute = 30;
+    let endHour = 17;
+    let endMinute = 0;
+    
+    if (jam && jam.includes("-")) {
+      const parts = jam.split("-").map(s => s.trim());
+      const startTimeStr = parts[0];
+      const endTimeStr = parts[1];
+      
+      if (startTimeStr && startTimeStr.includes(":")) {
+        const [h, m] = startTimeStr.split(":").map(Number);
+        if (!isNaN(h)) startHour = h;
+        if (!isNaN(m)) startMinute = m;
+      }
+      if (endTimeStr && endTimeStr.includes(":")) {
+        const [h, m] = endTimeStr.split(":").map(Number);
+        if (!isNaN(h)) endHour = h;
+        if (!isNaN(m)) endMinute = m;
+      }
+    }
+    const startDateTime = new Date(year, month - 1, day, startHour, startMinute, 0);
+    const endDateTime = new Date(year, month - 1, day, endHour, endMinute, 0);
+    return { start: startDateTime, end: endDateTime };
+  } catch (e) {
+    return { start: null, end: null };
+  }
+};
+
+/**
+ * Helper: Check if a schedule's time has passed compared to local current date and time.
+ */
+const isScheduleFinished = (tanggalInput, jam) => {
+  const { end } = getScheduleTimeRange(tanggalInput, jam);
+  if (!end) return false;
+  return new Date() > end;
+};
+
+/**
+ * Helper: Check if a schedule is currently active/ongoing compared to local current date and time.
+ */
+const isScheduleOngoing = (tanggalInput, jam) => {
+  const { start, end } = getScheduleTimeRange(tanggalInput, jam);
+  if (!start || !end) return false;
+  const now = new Date();
+  return now >= start && now <= end;
+};
+
+/**
  * Helper: Map backend jadwal object → frontend schedule object.
  * Ditulis defensif agar tidak crash meski format backend sedikit berbeda.
  */
@@ -103,13 +158,33 @@ const mapBackendSchedule = (item) => {
   if (!kelas) kelas = "-";
 
   let source = item.source || item.sourcenya || "";
-  if (!source) {
-    const isUmPtkin = prodi === "UM PTKIN" || item.prodinya === "UM PTKIN" || item.matkul === "UM PTKIN" || item.matkulnya === "UM PTKIN" || item.mata_kuliah === "UM PTKIN";
-    source = isUmPtkin ? "um_ptkin" : "manual";
+  const isUmPtkin = prodi === "UM PTKIN" || item.prodinya === "UM PTKIN" || item.matkul === "UM PTKIN" || item.matkulnya === "UM PTKIN" || item.mata_kuliah === "UM PTKIN" || source === "um_ptkin";
+  
+  if (isUmPtkin) {
+    source = "um_ptkin";
+  } else if (!source) {
+    if (item.is_auto === 1 || item.is_auto === true || item.is_auto === "1") {
+      source = "import";
+    } else {
+      source = "manual";
+    }
   }
 
-  const isUmPtkin = source === "um_ptkin" || prodi === "UM PTKIN";
-  const status = isUmPtkin ? "diterima" : "kosong";
+  let status = item.status || (isUmPtkin ? "diterima" : "kosong");
+  if (isScheduleFinished(isoTanggal, jam)) {
+    if (isUmPtkin || status === "diterima" || status === "dipesan" || status === "selesai") {
+      status = "selesai";
+    }
+  } else if (isScheduleOngoing(isoTanggal, jam)) {
+    if (isUmPtkin || status === "diterima" || status === "dipesan") {
+      status = "dipesan";
+    }
+  }
+  
+  const isAutoVal = item.is_auto === 1 || item.is_auto === true || item.is_auto === "1" ? 1 : 0;
+
+  // Untuk UM PTKIN, auto-fill data default
+  const labCapacity = isUmPtkin ? (labs.find(l => l.name?.toLowerCase() === ruang?.toLowerCase())?.capacity || 36) : 0;
 
   return {
     id: item.id,
@@ -119,46 +194,18 @@ const mapBackendSchedule = (item) => {
     jam,
     dosen: item.dosen || item.dosennya || "-",
     prodi,
-    kelas,
+    kelas: isUmPtkin ? "UMPTKIN" : kelas,
     matkul: item.matkul || item.matkulnya || item.mata_kuliah || "Mata Kuliah Umum",
     ruang,
     tanggalInput: isoTanggal,
-    mahasiswa: "Admin (Penjadwalan)",
-    nim: "-",
+    mahasiswa: isUmPtkin ? "Admin UMPTKIN" : "Admin (Penjadwalan)",
+    nim: isUmPtkin ? "000" : "-",
     numberwa: "-",
-    jumlahHadir: 0,
+    jumlahHadir: isUmPtkin ? labCapacity : 0,
     status,
     source,
+    is_auto: isAutoVal,
   };
-};
-
-/**
- * Helper: Check if a schedule's time has passed compared to local current date and time.
- * @param {string} tanggalInput - YYYY-MM-DD format
- * @param {string} jam - HH:MM - HH:MM format
- * @returns {boolean}
- */
-const isScheduleFinished = (tanggalInput, jam) => {
-  if (!tanggalInput) return false;
-  try {
-    const [year, month, day] = tanggalInput.split("-").map(Number);
-    let endHour = 17;
-    let endMinute = 0;
-    if (jam && jam.includes("-")) {
-      const parts = jam.split("-").map(s => s.trim());
-      const endTimeStr = parts[1];
-      if (endTimeStr && endTimeStr.includes(":")) {
-        const [h, m] = endTimeStr.split(":").map(Number);
-        if (!isNaN(h)) endHour = h;
-        if (!isNaN(m)) endMinute = m;
-      }
-    }
-    const endDateTime = new Date(year, month - 1, day, endHour, endMinute, 0);
-    const now = new Date();
-    return now > endDateTime;
-  } catch (e) {
-    return false;
-  }
 };
 
 /**

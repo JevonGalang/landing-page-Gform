@@ -57,9 +57,10 @@ export const getLabs = async () => {
  * Fetch data persentase penggunaan laboratorium dari backend.
  * GET /get/lab/persentase
  */
-export const getLabPersentase = async () => {
+export const getLabPersentase = async (onlyAuto = true) => {
   try {
-    const response = await API.get("/get/lab/persentase");
+    const url = onlyAuto ? "/get/lab/persentase" : "/get/lab/persentase?onlyAuto=false";
+    const response = await API.get(url);
     const data = response.data;
     if (data && data.message && Array.isArray(data.message)) {
       return { success: true, data: data.message };
