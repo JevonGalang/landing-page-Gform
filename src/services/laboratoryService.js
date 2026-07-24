@@ -35,7 +35,7 @@ export const getLabs = async () => {
           id: item.id_lab,
           name: item.nama_lab,
           description: fallback?.description || `Laboratorium ${item.nama_lab}`,
-          capacity: fallback?.capacity || item.kapasitas || 36,
+          capacity: item.kapasitas || fallback?.capacity || 36,
           status: fallback?.status || "available",
           prodi: fallback?.prodi || "Umum",
           spek: fallback?.spek || "-",

@@ -99,7 +99,7 @@ const isScheduleOngoing = (tanggalInput, jam) => {
  * Helper: Map backend jadwal object → frontend schedule object.
  * Ditulis defensif agar tidak crash meski format backend sedikit berbeda.
  */
-const mapBackendSchedule = (item) => {
+const mapBackendSchedule = (item, laboratoriesList = []) => {
   // Ambil tanggal
   const tanggal = item.tanggal || item.tanggalnya || item.tanggalInput || "";
   const isoTanggal = parseDateToISO(tanggal);
@@ -183,8 +183,9 @@ const mapBackendSchedule = (item) => {
   
   const isAutoVal = item.is_auto === 1 || item.is_auto === true || item.is_auto === "1" ? 1 : 0;
 
-  // Untuk UM PTKIN, auto-fill data default
-  const labCapacity = isUmPtkin ? (labs.find(l => l.name?.toLowerCase() === ruang?.toLowerCase())?.capacity || 36) : 0;
+  // Untuk UM PTKIN, auto-fill data default (gunakan laboratoriesList yang dinamis dari backend)
+  const activeLabsList = (laboratoriesList && laboratoriesList.length > 0) ? laboratoriesList : labs;
+  const labCapacity = isUmPtkin ? (activeLabsList.find(l => l.name?.toLowerCase() === ruang?.toLowerCase())?.capacity || 36) : 0;
 
   return {
     id: item.id,
@@ -437,7 +438,7 @@ export const AppProvider = ({ children }) => {
    * @param {Array} rawLogbooks  - Array data logbook mentah dari backend (sudah JOIN)
    */
   const mergeAndUpdateSchedules = useCallback((rawSchedules, rawLogbooks) => {
-    const schedules = rawSchedules.map(mapBackendSchedule);
+    const schedules = rawSchedules.map(item => mapBackendSchedule(item, laboratories));
     const logbooks = rawLogbooks.map(item => mapBackendLogbook(item, schedules));
 
     // Gabungkan: logbook entries menimpa jadwal yang sudah di-booking.
@@ -453,13 +454,13 @@ export const AppProvider = ({ children }) => {
     );
 
     setMySchedules([...logbooks, ...unbookedSchedules]);
-  }, []);
+  }, [laboratories]);
 
   /**
    * Gabungkan (merge) data history schedules + logbooks menjadi myHistorySchedules.
    */
   const mergeAndUpdateHistorySchedules = useCallback((rawHistSchedules, rawHistLogbooks) => {
-    const schedules = rawHistSchedules.map(mapBackendSchedule);
+    const schedules = rawHistSchedules.map(item => mapBackendSchedule(item, laboratories));
     const logbooks = rawHistLogbooks.map(item => mapBackendLogbook(item, schedules));
 
     // Gabungkan untuk history: logbook entries menimpa jadwal yang sudah di-booking
@@ -474,7 +475,7 @@ export const AppProvider = ({ children }) => {
     );
 
     setMyHistorySchedules([...logbooks, ...unbookedSchedules]);
-  }, []);
+  }, [laboratories]);
 
   /**
    * Fetch jadwal + logbook dari backend via HTTP dan gabungkan ke mySchedules.
