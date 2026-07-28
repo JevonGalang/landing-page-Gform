@@ -87,7 +87,7 @@ export default function HelpAndSupport() {
                 WhatsApp
               </p>
               <p className="text-sm font-bold text-gray-700">
-                +62 812-3456-789
+                +62 8211 4720 105
               </p>
             </div>
           </a>
@@ -104,7 +104,7 @@ export default function HelpAndSupport() {
                 Email Resmi
               </p>
               <p className="text-sm font-bold text-gray-700">
-                lab.matisi@uin.ac.id
+                matisiplt@gmail.com
               </p>
             </div>
           </a>

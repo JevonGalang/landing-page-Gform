@@ -32,6 +32,31 @@ export default function AdminPanel() {
     socketConnected
   } = useContext(AppContext);
 
+  const allowedMatisiLabs = [
+    "matematika",
+    "aplikasi 1",
+    "aplikasi 2",
+    "aplikasi 3",
+    "data sains",
+    "jaringan komputer",
+    "multimedia 1",
+    "multi media 1",
+    "multimedia 2",
+    "multi media 2",
+    "programming",
+    "sistem digital",
+    "sistem informasi",
+    "elc",
+    "podcast",
+    "sistem operasi",
+    "komputasi"
+  ];
+
+  const filteredLaboratories = (laboratories || []).filter(lab => {
+    const nameLower = (lab.name || "").toLowerCase();
+    return allowedMatisiLabs.some(keyword => nameLower.includes(keyword));
+  });
+
   const navigate = useNavigate();
 
   // Auth local states
@@ -122,15 +147,6 @@ export default function AdminPanel() {
   const [filterStatus, setFilterStatus] = useState("");
   const [filterSource, setFilterSource] = useState("");
 
-  // UM PTKIN Form States
-  const [umLab, setUmLab] = useState("");
-  const [umTanggal, setUmTanggal] = useState("");
-  const [umSessions, setUmSessions] = useState([
-    { id: 1, label: "Sesi 1", jamMulai: "07:30", jamSelesai: "10:00", dosen: "", active: true },
-    { id: 2, label: "Sesi 2", jamMulai: "10:00", jamSelesai: "12:30", dosen: "", active: true },
-    { id: 3, label: "Sesi 3", jamMulai: "12:30", jamSelesai: "15:00", dosen: "", active: true },
-    { id: 4, label: "Sesi 4 (Sisa Waktu)", jamMulai: "15:00", jamSelesai: "15:30", dosen: "", active: true }
-  ]);
   const [selectedLogIds, setSelectedLogIds] = useState([]);
 
   
@@ -175,6 +191,9 @@ export default function AdminPanel() {
   };
 
   const [backendSchedules, setBackendSchedules] = useState([]);
+  // States untuk data riwayat backend
+  const [historySchedules, setHistorySchedules] = useState([]);
+  const [historyLogbooks, setHistoryLogbooks] = useState([]);
 
   // Fetch percentages from backend
   const loadLabPercentages = useCallback(async () => {
@@ -203,12 +222,41 @@ export default function AdminPanel() {
     }
   }, []);
 
+  // Fetch riwayat data dari backend
+  const refreshHistoryData = useCallback(async () => {
+    try {
+      const [histSchedRes, histLogRes] = await Promise.all([
+        getHistorySchedules(),
+        getHistoryLogbooks()
+      ]);
+      const rawHistSchedules = histSchedRes.success ? histSchedRes.data : [];
+      const rawHistLogbooks = histLogRes.success ? histLogRes.data : [];
+      setHistorySchedules(rawHistSchedules);
+      setHistoryLogbooks(rawHistLogbooks);
+    } catch (e) {
+      console.error("Gagal memuat data riwayat:", e);
+    }
+  }, []);
+
+  // Wrapper untuk refresh seluruh data di admin panel agar selalu sinkron
+  const refreshAllAdminData = useCallback(async () => {
+    try {
+      await refreshData();
+      await loadBackendSchedules();
+      await loadLabPercentages();
+      await refreshHistoryData();
+    } catch (e) {
+      console.error("Gagal melakukan refresh data admin lengkap:", e);
+    }
+  }, [refreshData, loadBackendSchedules, loadLabPercentages, refreshHistoryData]);
+
   useEffect(() => {
     if (isAdminAuthenticated) {
       loadLabPercentages();
       loadBackendSchedules();
+      refreshHistoryData();
     }
-  }, [isAdminAuthenticated, loadLabPercentages, loadBackendSchedules]);
+  }, [isAdminAuthenticated, loadLabPercentages, loadBackendSchedules, refreshHistoryData]);
 
   const getMappedSchedules = useCallback((items) => {
     return items.map(item => {
@@ -429,7 +477,7 @@ export default function AdminPanel() {
         setUmSupervisors({ sesi1: "", sesi2: "", sesi3: "", sesi4: "" });
 
         // Refresh data dari backend
-        await refreshData();
+        await refreshAllAdminData();
         setActiveTab("data-penggunaan");
       } else {
         Swal.fire({
@@ -503,7 +551,7 @@ if (result.success) {
   setInputKeterangan("");
 
   // Refresh data dari backend
-  await refreshData();
+  await refreshAllAdminData();
   setActiveTab("data-penggunaan");
 } else {
   Swal.fire({
@@ -523,146 +571,7 @@ if (result.success) {
     
   };
 
-  // Handle Save UM PTKIN schedule via backend API
-  const handleSaveUmPtkin = async (e) => {
-    e.preventDefault();
 
-    if (!umLab || !umTanggal) {
-      Swal.fire({
-        icon: "warning",
-        title: "Form Belum Lengkap",
-        text: "Pilih Laboratorium dan Tanggal pelaksanaan terlebih dahulu!",
-      });
-      return;
-    }
-
-    const todayStr = getTodayDateString();
-    if (umTanggal < todayStr) {
-      Swal.fire({
-        icon: "error",
-        title: "Tanggal Tidak Valid",
-        text: "Tanggal pelaksanaan tidak boleh sebelum hari ini!",
-      });
-      return;
-    }
-
-    const activeSessions = umSessions.filter(s => s.active);
-    if (activeSessions.length === 0) {
-      Swal.fire({
-        icon: "warning",
-        title: "Sesi Belum Dipilih",
-        text: "Pilih minimal satu sesi untuk dijadwalkan!",
-      });
-      return;
-    }
-
-    const incompleteSessions = activeSessions.filter(s => !s.dosen.trim());
-    if (incompleteSessions.length > 0) {
-      Swal.fire({
-        icon: "warning",
-        title: "Nama Pengawas Kosong",
-        text: "Seluruh sesi aktif wajib diisi nama Dosen Pengawas!",
-      });
-      return;
-    }
-
-    // Cari ID lab berdasarkan nama lab yang dipilih
-    const selectedLabObj = laboratories.find(l => l.name === umLab);
-    const labId = selectedLabObj ? selectedLabObj.id : 1;
-    const labCapacity = selectedLabObj?.capacity || 36;
-
-    try {
-      let successCount = 0;
-      let failCount = 0;
-
-      for (const session of activeSessions) {
-        const result = await createSchedule({
-          labId,
-          prodi: "UM PTKIN",
-          matkul: "UM PTKIN",
-          dosen: session.dosen.trim(),
-          tanggal: umTanggal,
-          jamMulai: session.jamMulai,
-          jamSelesai: session.jamSelesai,
-          source: "um_ptkin",
-          is_auto: false,
-        });
-
-        if (result.success) {
-          // Ambil ID jadwal yang baru dibuat dari response backend (termasuk dari message.insertId)
-          const newScheduleId = result.data?.message?.insertId || result.data?.data?.id || result.data?.id || result.data?.insertId || null;
-          console.log(`[UM PTKIN Grid] Jadwal sesi ${session.jamMulai}-${session.jamSelesai} dibuat, ID:`, newScheduleId);
-
-          if (newScheduleId) {
-            // Auto-submit logbook entry untuk sesi UM PTKIN
-            try {
-              const bookingResult = await submitBooking({
-                scheduleId: newScheduleId,
-                namaKetua: "Admin UMPTKIN",
-                nim: "000",
-                kelas: "UMPTKIN",
-                jumlahPeserta: labCapacity,
-                nomorWa: "-",
-              });
-              console.log(`[UM PTKIN Grid] Logbook sesi ${session.jamMulai} dibuat:`, bookingResult);
-
-              if (bookingResult.success) {
-                // Auto-approve logbook (status → diterima) (termasuk dari message.insertId)
-                const logbookId = bookingResult.data?.message?.insertId || bookingResult.data?.data?.id || bookingResult.data?.id || bookingResult.data?.insertId || null;
-                if (logbookId) {
-                  const approveResult = await updateBookingStatus(logbookId, "diterima");
-                  console.log(`[UM PTKIN Grid] Logbook ID ${logbookId} di-approve:`, approveResult);
-                }
-              }
-            } catch (bookingErr) {
-              console.warn(`[UM PTKIN Grid] Gagal auto-submit logbook sesi ${session.jamMulai}:`, bookingErr);
-            }
-          }
-          successCount++;
-        } else {
-          failCount++;
-        }
-      }
-
-      if (successCount > 0) {
-        await Swal.fire({
-          icon: failCount > 0 ? "warning" : "success",
-          title: failCount > 0 ? "Penyimpanan Sebagian Berhasil" : "Berhasil",
-          text: failCount > 0 
-            ? `Berhasil menyimpan ${successCount} sesi UM PTKIN, namun ${failCount} sesi gagal disimpan.`
-            : `Seluruh (${successCount}) sesi jadwal UM PTKIN berhasil dibuat!`,
-        });
-
-        // Reset form states
-        setUmLab("");
-        setUmTanggal("");
-        setUmSessions([
-          { id: 1, label: "Sesi 1", jamMulai: "07:30", jamSelesai: "10:00", dosen: "", active: true },
-          { id: 2, label: "Sesi 2", jamMulai: "10:00", jamSelesai: "12:30", dosen: "", active: true },
-          { id: 3, label: "Sesi 3", jamMulai: "12:30", jamSelesai: "15:00", dosen: "", active: true },
-          { id: 4, label: "Sesi 4 (Sisa Waktu)", jamMulai: "15:00", jamSelesai: "15:30", dosen: "", active: true }
-        ]);
-
-        // Refresh data dari backend
-        await refreshData();
-        
-        // Pindah ke tab data-penggunaan
-        setActiveTab("data-penggunaan");
-      } else {
-        Swal.fire({
-          icon: "error",
-          title: "Gagal",
-          text: "Gagal menyimpan jadwal UM PTKIN. Silakan coba lagi.",
-        });
-      }
-    } catch (error) {
-      Swal.fire({
-        icon: "error",
-        title: "Terjadi Kesalahan",
-        text: "Terjadi kesalahan sistem saat menyimpan jadwal.",
-      });
-    }
-  };
 
   // Handle Logout — clear token dari localStorage
   const handleLogout = async () => {
@@ -685,25 +594,7 @@ if (result.success) {
     }
   };
 
-  // States untuk data riwayat backend
-  const [historySchedules, setHistorySchedules] = useState([]);
-  const [historyLogbooks, setHistoryLogbooks] = useState([]);
 
-  // Fetch riwayat data dari backend
-  const refreshHistoryData = async () => {
-    try {
-      const [histSchedRes, histLogRes] = await Promise.all([
-        getHistorySchedules(),
-        getHistoryLogbooks()
-      ]);
-      const rawHistSchedules = histSchedRes.success ? histSchedRes.data : [];
-      const rawHistLogbooks = histLogRes.success ? histLogRes.data : [];
-      setHistorySchedules(rawHistSchedules);
-      setHistoryLogbooks(rawHistLogbooks);
-    } catch (e) {
-      console.error("Gagal memuat data riwayat:", e);
-    }
-  };
 
   // Helper: Format payload schedule ke format request backend biasa (/post/formadmin)
   const formatSchedulePayload = (schedule) => {
@@ -740,8 +631,8 @@ if (result.success) {
   };
 
   // Helper: Format payload logbook ke format request backend biasa (/post/logbook)
-  const formatLogbookPayload = (logbook) => {
-    let scheduleId = logbook._scheduleId || logbook.scheduleId || logbook.schaduleId;
+  const formatLogbookPayload = (logbook, newHistSchedId = null) => {
+    let scheduleId = newHistSchedId || logbook._scheduleId || logbook.scheduleId || logbook.schaduleId;
     
     if (!scheduleId) {
       const rawSched = logbook.schadule || logbook.schedule || logbook.jadwal;
@@ -754,13 +645,37 @@ if (result.success) {
       }
     }
     
+    const parsedScheduleId = scheduleId ? parseInt(scheduleId, 10) : null;
+    const namaVal = (logbook.mahasiswa || logbook.namaKetua || "").trim();
+    const nimVal = (logbook.nim || "").trim();
+    const kelasVal = (logbook.kelas || "").trim();
+    const jumlahVal = parseInt(logbook.jumlahHadir || logbook.jumlahPeserta || 0, 10);
+    const waVal = (logbook.numberwa || logbook.nomorWa || "").trim();
+    
     return {
-      schadule: scheduleId ? parseInt(scheduleId, 10) : null,
-      namaKetua: (logbook.mahasiswa || logbook.namaKetua || "").trim(),
-      nim: (logbook.nim || "").trim(),
-      kelas: (logbook.kelas || "").trim(),
-      jumlahPeserta: parseInt(logbook.jumlahHadir || logbook.jumlahPeserta || 0, 10),
-      nomorWa: (logbook.numberwa || logbook.nomorWa || "").trim(),
+      // ID Schedule Variations
+      schadules: parsedScheduleId,
+      schadule: parsedScheduleId,
+      schedule_id: parsedScheduleId,
+      scheduleId: parsedScheduleId,
+      
+      // namaMahasiswa / namaKetua Variations
+      namaKetua: namaVal,
+      namaMahasiswa: namaVal,
+      
+      // nim
+      nim: nimVal,
+      
+      // kelas
+      kelas: kelasVal,
+      
+      // jumlahPeserta / jumlah_hadir Variations
+      jumlahPeserta: jumlahVal,
+      jumlah_hadir: jumlahVal,
+      
+      // nomorWa / no_wa Variations
+      nomorWa: waVal,
+      no_wa: waVal,
     };
   };
 
@@ -1000,8 +915,7 @@ if (result.success) {
         confirmButtonColor: "#3b82f6"
       });
 
-      await refreshData();
-      await refreshHistoryData();
+      await refreshAllAdminData();
     } catch (err) {
       Swal.fire({
         icon: "error",
@@ -1029,40 +943,48 @@ if (result.success) {
 
     if (item && item._backendId) {
       try {
-        // Jika statusnya dipesan / bertipe logbook, hapus menggunakan endpoint /delete/logbook/:id
-        const result = (item._type === "logbook" || item.status === "dipesan" || item.status === "diterima" || item.status === "selesai")
-          ? await deleteLogbookEntry(item._backendId)
-          : await deleteEntry(item._backendId);
+        const isUmPtkin = item.source === "um_ptkin" || item.prodi === "UM PTKIN";
+        let result = null;
 
-        if (result.success) {
-          // Kirim data ke history backend sebelum refresh
-          try {
-            if (item._type === "logbook" || item.status === "dipesan" || item.status === "diterima" || item.status === "selesai") {
-              const schedHistRes = await postHistorySchedule(formatSchedulePayload(item));
-              if (schedHistRes.success) {
-                const newHistSchedId = schedHistRes.data?.newHistoryScheduleId || schedHistRes.data?.insertId || schedHistRes.data?.id || schedHistRes.data?.message?.newHistoryScheduleId || schedHistRes.data?.message?.id;
-                const logbookPayload = formatLogbookPayload(item);
-                if (newHistSchedId) {
-                  logbookPayload.schadules = parseInt(newHistSchedId, 10);
-                  logbookPayload.schadule = parseInt(newHistSchedId, 10);
-                }
-                await postHistoryLogbook(logbookPayload);
-              }
-            } else {
-              await postHistorySchedule(formatSchedulePayload(item));
+        // 1. Simpan ke history (try-catch terisolasi agar tidak menghalangi penghapusan aktif jika history gagal)
+        try {
+          if (item._type === "logbook" || item.status === "dipesan" || item.status === "diterima" || item.status === "selesai") {
+            const schedHistRes = await postHistorySchedule(formatSchedulePayload(item));
+            if (schedHistRes && schedHistRes.success) {
+              const newHistSchedId = schedHistRes.data?.newHistoryScheduleId || schedHistRes.data?.insertId || schedHistRes.data?.id || schedHistRes.data?.message?.newHistoryScheduleId || schedHistRes.data?.message?.id;
+              const logbookPayload = formatLogbookPayload(item, newHistSchedId);
+              await postHistoryLogbook(logbookPayload);
             }
-          } catch (histErr) {
-            console.error("Gagal mencatat riwayat:", histErr);
+          } else {
+            await postHistorySchedule(formatSchedulePayload(item));
           }
+        } catch (histErr) {
+          console.error("Gagal mencatat riwayat ke history (single delete):", histErr);
+        }
 
+        // 2. Hapus data aktif dari server (Untuk UM PTKIN, hapus logbook dan juga jadwal induknya)
+        if (isUmPtkin) {
+          if (item._type === "logbook" && item._backendId) {
+            await deleteLogbookEntry(item._backendId);
+          }
+          const schedId = item._type === "logbook" ? item._scheduleId : item._backendId;
+          if (schedId) {
+            result = await deleteEntry(schedId);
+          }
+        } else {
+          result = (item._type === "logbook" || item.status === "dipesan" || item.status === "diterima" || item.status === "selesai")
+            ? await deleteLogbookEntry(item._backendId)
+            : await deleteEntry(item._backendId);
+        }
+
+        if (result && result.success) {
           await Swal.fire({
             icon: "success",
             title: "Berhasil",
             text: "Data berhasil dihapus.",
           });
 
-          await refreshData();
-          await refreshHistoryData();
+          await refreshAllAdminData();
         } else {
           Swal.fire({
             icon: "error",
@@ -1150,7 +1072,7 @@ if (result.success) {
           text: "Seluruh data logbook dan jadwal berhasil dikosongkan.",
           confirmButtonColor: "#3b82f6"
         });
-        await refreshData();
+        await refreshAllAdminData();
       } else {
         const errorMsg = [
           !logbookRes.success && `Logbook: ${logbookRes.message}`,
@@ -1448,45 +1370,59 @@ const handleSaveEdit = (e) => {
 
     if (confirmation.isConfirmed) {
       let bulkDeleteSuccess = true;
-      // Simpan logbook/jadwal terpilih ke history backend sebelum dihapus
+      
       for (const s of mySchedules) {
         if (selectedLogIds.includes(s.id)) {
+          let deleteResult = null;
+          
+          // 1. Simpan ke history (try-catch terisolasi agar tidak menghalangi penghapusan aktif)
           try {
-            // 1. Simpan ke history
             if (s._type === "logbook" || s.status === "dipesan" || s.status === "diterima" || s.status === "selesai") {
               const schedHistRes = await postHistorySchedule(formatSchedulePayload(s));
-              if (schedHistRes.success) {
+              if (schedHistRes && schedHistRes.success) {
                 const newHistSchedId = schedHistRes.data?.newHistoryScheduleId || schedHistRes.data?.insertId || schedHistRes.data?.id || schedHistRes.data?.message?.newHistoryScheduleId || schedHistRes.data?.message?.id;
-                const logbookPayload = formatLogbookPayload(s);
-                if (newHistSchedId) {
-                  logbookPayload.schadules = parseInt(newHistSchedId, 10);
-                  logbookPayload.schadule = parseInt(newHistSchedId, 10);
-                }
+                const logbookPayload = formatLogbookPayload(s, newHistSchedId);
                 await postHistoryLogbook(logbookPayload);
               }
             } else {
               await postHistorySchedule(formatSchedulePayload(s));
             }
+          } catch (histErr) {
+            console.error("Gagal mencatat riwayat ke history (bulk delete):", histErr);
+          }
 
-            // 2. Hapus data aktif dari server
-            if (s._backendId) {
-              const deleteResult = (s._type === "logbook" || s.status === "dipesan" || s.status === "diterima" || s.status === "selesai")
-                ? await deleteLogbookEntry(s._backendId)
-                : await deleteEntry(s._backendId);
-              if (!deleteResult.success) {
-                bulkDeleteSuccess = false;
+          // 2. Hapus data aktif dari server
+          try {
+            const isUmPtkin = s.source === "um_ptkin" || s.prodi === "UM PTKIN";
+            if (isUmPtkin) {
+              if (s._type === "logbook" && s._backendId) {
+                await deleteLogbookEntry(s._backendId);
+              }
+              const schedId = s._type === "logbook" ? s._scheduleId : s._backendId;
+              if (schedId) {
+                deleteResult = await deleteEntry(schedId);
+              }
+            } else {
+              if (s._backendId) {
+                deleteResult = (s._type === "logbook" || s.status === "dipesan" || s.status === "diterima" || s.status === "selesai")
+                  ? await deleteLogbookEntry(s._backendId)
+                  : await deleteEntry(s._backendId);
               }
             }
-          } catch (histErr) {
-            console.error("Gagal mencatat atau menghapus riwayat bulk delete:", histErr);
+            
+            if (deleteResult && !deleteResult.success) {
+              bulkDeleteSuccess = false;
+              console.error(`Gagal menghapus data aktif dari server untuk ID:`, s._backendId);
+            }
+          } catch (delErr) {
+            console.error(`Error saat menghapus data aktif bulk delete:`, delErr);
             bulkDeleteSuccess = false;
           }
         }
       }
       setMySchedules(mySchedules.filter(s => !selectedLogIds.includes(s.id)));
       setSelectedLogIds([]);
-      await refreshData();
-      await refreshHistoryData();
+      await refreshAllAdminData();
       Swal.fire({
         icon: bulkDeleteSuccess ? "success" : "warning",
         title: bulkDeleteSuccess ? "Berhasil" : "Selesai dengan Peringatan",
@@ -2209,7 +2145,7 @@ const handleSaveEdit = (e) => {
     }
 
     if (successCount > 0) {
-      await refreshData();
+      await refreshAllAdminData();
     }
 
     let message = `${successCount} Jadwal berhasil diimpor.`;
@@ -2496,19 +2432,6 @@ const handleSaveEdit = (e) => {
             >
               <Plus size={16} />
               Buat Jadwal Kuliah
-            </button>
-
-            <button
-              onClick={() => { setActiveTab("um-ptkin"); setIsMobileMenuOpen(false); }}
-              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-xs font-bold transition ${
-                activeTab === "um-ptkin"
-                  ? "text-white shadow-md"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-              }`}
-              style={{ backgroundColor: activeTab === "um-ptkin" ? "#4b8fca" : "transparent" }}
-            >
-              <Award size={16} />
-              Input Jadwal UM PTKIN
             </button>
           </nav>
         </div>
@@ -3482,7 +3405,7 @@ const handleSaveEdit = (e) => {
                       <FileSpreadsheet size={20} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm text-slate-800 font-display">Import Massal (Excel/CSV)</h3>
+                      <h3 className="font-bold text-sm text-slate-800 font-display">Import Jadwal Otomatis (Excel/CSV)</h3>
                       <p className="text-[10px] text-slate-400">Impor banyak jadwal sekaligus secara otomatis</p>
                     </div>
                   </div>
@@ -3530,7 +3453,7 @@ const handleSaveEdit = (e) => {
                           className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-xs bg-white"
                         >
                           <option value="">-- Pilih Laboratorium --</option>
-                          {laboratories.map((lab) => (
+                          {filteredLaboratories.map((lab) => (
                             <option key={lab.id} value={lab.name}>
                               {lab.name}
                             </option>
@@ -3670,7 +3593,7 @@ const handleSaveEdit = (e) => {
                       <Calendar size={22} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-base font-display">Form Entri Jadwal Kuliah</h3>
+                      <h3 className="font-bold text-base font-display">Form Entri Manual Jadwal Kuliah</h3>
                       <p className="text-[10px] text-white/80">Silakan lengkapi seluruh kolom di bawah ini</p>
                     </div>
                   </div>
@@ -3704,7 +3627,7 @@ const handleSaveEdit = (e) => {
                         className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50"
                       >
                         <option value="">-- Pilih Laboratorium --</option>
-                        {laboratories.map((lab) => (
+                        {filteredLaboratories.map((lab) => (
                           <option key={lab.id} value={lab.name}>
                             {lab.name}
                           </option>
@@ -3980,180 +3903,6 @@ const handleSaveEdit = (e) => {
                   </form>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* ==================== TAB: INPUT JADWAL UM PTKIN ==================== */}
-        {activeTab === "um-ptkin" && (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div>
-              <h1 className="text-2xl font-extrabold text-slate-800 font-display flex items-center gap-2">
-                <Award className="text-amber-500" size={26} />
-                Penjadwalan UM PTKIN
-              </h1>
-              <p className="text-xs text-slate-500 mt-1">
-                Modul khusus untuk menjadwalkan Ujian Masuk PTKIN secara otomatis dalam 4 sesi terpisah.
-              </p>
-            </div>
-
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden">
-              {/* Header Banner */}
-              <div className="p-6 text-white flex items-center gap-3" style={{ backgroundColor: "#4b8fca" }}>
-                <div className="p-2 bg-white/10 rounded-xl">
-                  <Award size={22} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base font-display">Form Otomatisasi Jadwal UM PTKIN</h3>
-                  <p className="text-[10px] text-white/80">
-                    Sistem akan otomatis membuat jadwal untuk seluruh sesi aktif di laboratorium dan tanggal terpilih
-                  </p>
-                </div>
-              </div>
-
-              {/* Form Content */}
-              <form onSubmit={handleSaveUmPtkin} className="p-6 space-y-6">
-                {/* Lab & Tanggal Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      Pilih Laboratorium
-                    </label>
-                    <select
-                      required
-                      value={umLab}
-                      onChange={(e) => setUmLab(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50 cursor-pointer"
-                    >
-                      <option value="">-- Pilih Laboratorium --</option>
-                      {laboratories.map((lab) => (
-                        <option key={lab.id} value={lab.name}>
-                          {lab.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      Pilih Tanggal Pelaksanaan
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={umTanggal}
-                      onChange={(e) => setUmTanggal(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-sm transition bg-slate-50/50"
-                    />
-                  </div>
-                </div>
-
-                {/* Info Card / Autofilled attributes preview */}
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                  <div>
-                    <span className="font-bold text-slate-400 block uppercase tracking-wider text-[9px]">Program Studi</span>
-                    <span className="font-extrabold text-slate-700 text-sm mt-0.5 block">UM PTKIN (Otomatis)</span>
-                  </div>
-                  <div>
-                    <span className="font-bold text-slate-400 block uppercase tracking-wider text-[9px]">Mata Kuliah</span>
-                    <span className="font-extrabold text-slate-700 text-sm mt-0.5 block">UM PTKIN (Otomatis)</span>
-                  </div>
-                  <div>
-                    <span className="font-bold text-slate-400 block uppercase tracking-wider text-[9px]">Kelas</span>
-                    <span className="font-extrabold text-slate-700 text-sm mt-0.5 block">
-                      {umLab ? umLab : "Nama Lab Terpilih (Otomatis)"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Sesi List & Supervisor Inputs */}
-                <div className="space-y-4">
-                  <h4 className="font-bold text-xs text-slate-500 uppercase tracking-wider">
-                    Daftar Sesi Ujian & Dosen Pengawas
-                  </h4>
-
-                  <div className="grid grid-cols-1 gap-4">
-                    {umSessions.map((session, idx) => (
-                      <div
-                        key={session.id}
-                        className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                          session.active 
-                            ? "bg-white border-slate-200 shadow-sm" 
-                            : "bg-slate-50/50 border-slate-100 opacity-60"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={session.active}
-                            onChange={(e) => {
-                              const updated = [...umSessions];
-                              updated[idx].active = e.target.checked;
-                              setUmSessions(updated);
-                            }}
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          />
-                          <div>
-                            <span className="font-bold text-slate-800 text-sm block">{session.label}</span>
-                            <span className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                              <Clock size={12} className="text-slate-400" />
-                              {session.jamMulai} - {session.jamSelesai}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex-1 max-w-md">
-                          <input
-                            type="text"
-                            required={session.active}
-                            disabled={!session.active}
-                            placeholder="Nama Dosen Pengawas..."
-                            value={session.dosen}
-                            onChange={(e) => {
-                              const updated = [...umSessions];
-                              updated[idx].dosen = e.target.value;
-                              setUmSessions(updated);
-                            }}
-                            className={`w-full px-4 py-2.5 rounded-xl border focus:outline-none text-xs transition ${
-                              session.active
-                                ? "border-slate-200 focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white"
-                                : "border-slate-100 bg-slate-100/50 text-slate-400 cursor-not-allowed"
-                            }`}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Submit / Action buttons */}
-                <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUmLab("");
-                      setUmTanggal("");
-                      setUmSessions([
-                        { id: 1, label: "Sesi 1", jamMulai: "07:30", jamSelesai: "10:00", dosen: "", active: true },
-                        { id: 2, label: "Sesi 2", jamMulai: "10:00", jamSelesai: "12:30", dosen: "", active: true },
-                        { id: 3, label: "Sesi 3", jamMulai: "12:30", jamSelesai: "15:00", dosen: "", active: true },
-                        { id: 4, label: "Sesi 4 (Sisa Waktu)", jamMulai: "15:00", jamSelesai: "15:30", dosen: "", active: true }
-                      ]);
-                      setActiveTab("data-penggunaan");
-                    }}
-                    className="px-5 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-bold transition text-xs cursor-pointer"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-3 text-white rounded-xl font-bold transition text-xs shadow-md hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-                    style={{ backgroundColor: "#4b8fca" }}
-                  >
-                    Simpan Jadwal UM PTKIN
-                  </button>
-                </div>
-              </form>
             </div>
           </div>
         )}

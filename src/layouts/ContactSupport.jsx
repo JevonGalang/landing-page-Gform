@@ -30,7 +30,7 @@ export default function ContactSupport() {
         {/* Jalur Cepat */}
         <div className="md:col-span-1 space-y-4">
           <a 
-            href="https://wa.me/628123456789" 
+            href="https://wa.me/6282114720105" 
             target="_blank" 
             rel="noopener noreferrer" 
             className="p-4 bg-white border border-gray-100 rounded-xl flex items-center gap-3 hover:border-green-200 hover:shadow-xs transition duration-200 cursor-pointer block"
@@ -38,7 +38,7 @@ export default function ContactSupport() {
             <div className="p-3 bg-green-50 text-green-600 rounded-xl text-xl">💬</div>
             <div>
               <p className="text-xs text-gray-400 font-semibold uppercase">WhatsApp</p>
-              <p className="text-sm font-bold text-gray-700">+62 812-3456-789</p>
+              <p className="text-sm font-bold text-gray-700">+62 8211 4720 105</p>
             </div>
           </a>
           <a 
@@ -48,7 +48,7 @@ export default function ContactSupport() {
             <div className="p-3 bg-blue-50 text-blue-600 rounded-xl text-xl">📧</div>
             <div>
               <p className="text-xs text-gray-400 font-semibold uppercase">Email Resmi</p>
-              <p className="text-sm font-bold text-gray-700">lab.matisi@uin.ac.id</p>
+              <p className="text-sm font-bold text-gray-700">matisiplt@gmail.com</p>
             </div>
           </a>
         </div>

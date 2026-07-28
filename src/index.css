@@ -60,7 +60,7 @@ body {
   @apply text-[10px] text-blue-200/80;
 }
 .footer-copyright {
-  @apply text-xs text-blue-200/80 font-medium md:translate-x-4;
+  @apply text-xs text-blue-200/80 font-medium;
 }
 .footer-socials {
   @apply flex items-center gap-3;
@@ -118,7 +118,7 @@ body {
   @apply text-lg font-bold text-slate-800 font-display tracking-tight leading-none mb-0.5;
 }
 .sidebar-subtitle {
-  @apply text-[8.5px] text-slate-400 font-semibold leading-normal max-w-[170px];
+  @apply text-[9.5px] text-slate-400 font-semibold leading-normal max-w-[170px];
 }
 .sidebar-close-btn {
   @apply w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition;
@@ -206,10 +206,10 @@ body {
   @apply text-xs text-slate-500 font-semibold;
 }
 .labs-grid {
-  @apply flex flex-wrap justify-center gap-6 w-full max-w-5xl mb-6;
+  @apply grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 w-full mb-20;
 }
 .lab-card {
-  @apply bg-white border border-slate-100 rounded-[2rem] p-7 shadow-xs hover:shadow-xl hover:border-slate-200/50 transition-all duration-300 relative flex flex-col justify-between min-h-[190px] w-full md:max-w-[310px] hover:-translate-y-1.5 cursor-pointer;
+  @apply bg-white border border-slate-100 rounded-[2rem] p-7 shadow-xs hover:shadow-xl hover:border-slate-200/50 transition-all duration-300 relative flex flex-col justify-between min-h-[190px] w-full hover:-translate-y-1.5 cursor-pointer;
 }
 .lab-icon-container {
   @apply w-12 h-12 rounded-[1.1rem] text-white flex items-center justify-center shadow-md shadow-slate-100;

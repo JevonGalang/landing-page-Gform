@@ -1,23 +1,28 @@
 import { Mail } from "lucide-react";
 import logoUIN from "../../assets/logoUIN.jpg";
-
+import logoFST from "../../assets/logoFST.jpeg"
 export default function Footer() {
   return (
     <footer className="footer-container">
-      {/* Left: Brand */}
+      {/* Left: Brand
       <div className="footer-brand">
         <div className="footer-logo-container">
           <img src={logoUIN} alt="UIN Logo" className="footer-logo" />
+         <img src={logoFST} alt="logoFST harusnya disini bray" className="footer-logoFST "/>
         </div>
-        <div className="footer-brand-info">
+         
+         <div className="footer-brand-info">
           <h4 className="footer-brand-title">Lab MaTiSi</h4>
           <p className="footer-brand-subtitle">Laboratorium Komputer dan Fasilitas Lainnya</p>
         </div>
-      </div>
+      </div> */}
+
+      {/* Left placeholder to center copyright on desktop */}
+      <div className="hidden md:block w-[132px]"></div>
 
       {/* Center: Copyright */}
       <div className="footer-copyright">
-        © 2025 Lab MaTiSi - All rights reserved.
+        © 2026 FST PLT Matisi - All rights reserved.
       </div>
 
       {/* Right: Social Media */}

@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { LayoutDashboard, CalendarDays, Info, CircleHelp, Phone, Headphones, X, ShieldCheck } from "lucide-react";
 import { AppContext } from "../../context/AppContext";
 import logoUIN from "../../assets/logoUIN.jpg";
+import logoFST from "../../assets/logoFST.jpeg";
 
 const menus = [
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
@@ -21,16 +22,21 @@ const SidebarContent = ({ showCloseBtn = false, setSidebarOpen }) => {
     <div className="sidebar-container">
       {/* Brand Header */}
       <div className="sidebar-header">
-        <div className="sidebar-brand">
-          <div className="sidebar-logo-container">
-            <img src={logoUIN} alt="UIN Logo" className="sidebar-logo" />
+        <div className="flex flex-col items-start gap-3 w-full">
+          <h1 className="sidebar-title mb-0 text-[20px] lg:text-[21px]">Lab MaTiSi</h1>
+          
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="w-11 h-11 rounded-full overflow-hidden flex items-center justify-center border border-slate-100 shrink-0">
+              <img src={logoUIN} alt="UIN Logo" className="w-full h-full object-cover" />
+            </div>
+            <div className="w-11 h-11 rounded-full overflow-hidden flex items-center justify-center border border-slate-100 shrink-0">
+              <img src={logoFST} alt="FST Logo" className="w-full h-full object-cover" />
+            </div>
           </div>
-          <div className="flex flex-col">
-            <h1 className="sidebar-title">Lab MaTiSi</h1>
-            <p className="sidebar-subtitle">
-              Laboratorium Komputer Prodi Matematika, Teknik Informatika dan Sistem Informasi
-            </p>
-          </div>
+
+          <p className="sidebar-subtitle !max-w-full text-[10.5px] lg:text-[11px] leading-relaxed">
+            Laboratorium Komputer Prodi Matematika, Teknik Informatika dan Sistem Informasi
+          </p>
         </div>
 
         {/* Mobile Close Button */}

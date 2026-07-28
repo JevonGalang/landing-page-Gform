@@ -265,7 +265,7 @@ export default function LaboratoryBookingForm() {
   };
 
   return (
-    <div className="px-4 sm:px-6 py-6 max-w-2xl mx-auto">
+    <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto">
       <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
 
         {/* Header */}
@@ -412,8 +412,8 @@ export default function LaboratoryBookingForm() {
                   )}
 
                   {/* Result count */}
-                  <p className="text-[10px] text-slate-400 font-semibold">
-                    Menampilkan <strong className="text-slate-600">{filteredSchedules.length}</strong> dari <strong className="text-slate-600">{availableSchedules.length}</strong> jadwal tersedia
+                  <p className="text-[11px] text-slate-500 font-semibold">
+                    Menampilkan <strong className="text-slate-700">{filteredSchedules.length}</strong> dari <strong className="text-slate-700">{availableSchedules.length}</strong> jadwal tersedia
                   </p>
                 </div>
 
@@ -459,7 +459,7 @@ export default function LaboratoryBookingForm() {
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin">
+                  <div className="space-y-2 md:grid md:grid-cols-2 md:gap-3.5 md:space-y-0 max-h-[420px] overflow-y-auto pr-1 scrollbar-thin">
                     {filteredSchedules.map((s) => {
                       const { start, end } = parseScheduleTimes(s.tanggalInput, s.jam);
                       const now = new Date();
@@ -517,17 +517,17 @@ export default function LaboratoryBookingForm() {
                               </div>
                               {/* Matkul & Dosen */}
                               <p className="text-sm font-bold text-slate-800 leading-tight">{s.matkul}</p>
-                              <p className="text-[11px] text-slate-500 mt-0.5">{s.dosen}</p>
+                              <p className="text-[12px] text-slate-600 mt-0.5 font-medium">{s.dosen}</p>
                               {/* Time & Date chips */}
-                              <div className="flex flex-wrap gap-1.5 mt-2">
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-slate-200 text-slate-600 rounded-md text-[10px] font-semibold">
-                                  <Calendar size={9} /> {s.hari}, {s.tanggalInput}
+                              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                                <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 text-slate-700 rounded-md text-[11px] font-semibold">
+                                  <Calendar size={10} className="text-slate-400 shrink-0" /> {s.hari}, {s.tanggalInput}
                                 </span>
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-slate-200 text-slate-600 rounded-md text-[10px] font-semibold">
-                                  <Clock size={9} /> {s.jam}
+                                <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 text-slate-700 rounded-md text-[11px] font-semibold">
+                                  <Clock size={10} className="text-slate-400 shrink-0" /> {s.jam}
                                 </span>
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-slate-200 text-slate-600 rounded-md text-[10px] font-semibold">
-                                  <BookOpen size={9} /> {s.prodi}
+                                <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 text-slate-700 rounded-md text-[11px] font-semibold">
+                                  <BookOpen size={10} className="text-slate-400 shrink-0" /> {s.prodi}
                                 </span>
                               </div>
                             </div>
