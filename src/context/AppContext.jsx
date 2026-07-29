@@ -529,7 +529,10 @@ export const AppProvider = ({ children }) => {
       try {
         const fetchedLabs = await getLabs();
         if (fetchedLabs && fetchedLabs.length > 0) {
-          setLaboratories(fetchedLabs);
+          // Filter agar hanya menampilkan laboratorium yang termasuk dalam rumpun MaTiSi (Matematika, Teknik Informatika, Sistem Informasi, dan Umum)
+          const validLabNames = new Set(labs.map(l => l.name.toLowerCase().trim()));
+          const filtered = fetchedLabs.filter(l => l.name && validLabNames.has(l.name.toLowerCase().trim()));
+          setLaboratories(filtered.length > 0 ? filtered : labs);
         }
       } catch (error) {
         console.error("Gagal fetch daftar lab:", error);

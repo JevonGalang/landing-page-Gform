@@ -133,7 +133,7 @@ export default function AdminPanel() {
   const [importFileName, setImportFileName] = useState("");
   const [importError, setImportError] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
-  const [importWeekStartDate, setImportWeekStartDate] = useState(getMondayOfCurrentWeek());
+  const [importWeekStartDate, setImportWeekStartDate] = useState("");
   const [importDefaultLab, setImportDefaultLab] = useState("");
 
   // Dropdown options
@@ -165,8 +165,10 @@ export default function AdminPanel() {
   // Laporan Date Range & Type/Status States
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [reportType, setReportType] = useState("semua"); // "semua", "harian", "semester"
-  const [reportStatus, setReportStatus] = useState("semua"); // "semua", "dipesan", "kosong"
+  const [reportType, setReportType] = useState("semua"); // "semua", "harian", "semester1", "semester2", "bulanan"
+  const [reportStatus, setReportStatus] = useState("semua"); // "semua", "terpakai", "tidak terpakai"
+  const [reportYear, setReportYear] = useState(new Date().getFullYear().toString());
+  const [reportMonth, setReportMonth] = useState("");
 
   // Detail Modal State
   const [selectedLog, setSelectedLog] = useState(null);
@@ -177,7 +179,9 @@ export default function AdminPanel() {
   // Laporan Analisis Persentase Lab States
   const [labPercentages, setLabPercentages] = useState([]);
   const [selectedLabId, setSelectedLabId] = useState("");
-  const [periodeSemester, setPeriodeSemester] = useState("Januari - Juni 2026");
+  const [analisisSemester, setAnalisisSemester] = useState("1");
+  const [analisisYear, setAnalisisYear] = useState(new Date().getFullYear().toString());
+  const [periodeSemester, setPeriodeSemester] = useState(`Semester 1 / Ganjil (Agt ${new Date().getFullYear()} - Jan ${new Date().getFullYear() + 1})`);
 
   const getIndonesianDateString = (dateObj = new Date()) => {
     const months = [
@@ -222,12 +226,12 @@ export default function AdminPanel() {
     }
   }, []);
 
-  // Fetch riwayat data dari backend
-  const refreshHistoryData = useCallback(async () => {
+  // Fetch riwayat data dari backend dengan dukungan query parameters (semester, year, month)
+  const refreshHistoryData = useCallback(async (customParams = {}) => {
     try {
       const [histSchedRes, histLogRes] = await Promise.all([
-        getHistorySchedules(),
-        getHistoryLogbooks()
+        getHistorySchedules(customParams),
+        getHistoryLogbooks(customParams)
       ]);
       const rawHistSchedules = histSchedRes.success ? histSchedRes.data : [];
       const rawHistLogbooks = histLogRes.success ? histLogRes.data : [];
@@ -257,6 +261,38 @@ export default function AdminPanel() {
       refreshHistoryData();
     }
   }, [isAdminAuthenticated, loadLabPercentages, loadBackendSchedules, refreshHistoryData]);
+
+  // Re-fetch data riwayat ketika filter periode (semester / bulan / tahun) pada tab laporan berubah
+  useEffect(() => {
+    if (!isAdminAuthenticated) return;
+    if (activeTab === "laporan") {
+      const params = {};
+      if (reportType === "semester1") {
+        params.semester = 1;
+        if (reportYear) params.year = reportYear;
+      } else if (reportType === "semester2") {
+        params.semester = 2;
+        if (reportYear) params.year = reportYear;
+      } else if (reportType === "bulanan" && reportMonth) {
+        params.month = reportMonth;
+        if (reportYear) params.year = reportYear;
+      }
+      refreshHistoryData(params);
+    } else if (activeTab === "analisis-lab") {
+      refreshHistoryData({ semester: analisisSemester, year: analisisYear });
+    }
+  }, [isAdminAuthenticated, activeTab, reportType, reportYear, reportMonth, analisisSemester, analisisYear, refreshHistoryData]);
+
+  // Reset impor states saat tab "buat-jadwal" baru dibuka/di-mount
+  useEffect(() => {
+    if (activeTab === "buat-jadwal") {
+      setImportWeekStartDate("");
+      setImportDefaultLab("");
+      setImportedSchedules([]);
+      setImportFileName("");
+      setImportError("");
+    }
+  }, [activeTab]);
 
   const getMappedSchedules = useCallback((items) => {
     return items.map(item => {
@@ -1524,19 +1560,41 @@ const handleSaveEdit = (e) => {
       }
     }
 
-    // 2. Filter Jenis Laporan (Periode)
+    // 2. Filter Jenis Laporan (Periode Akademik)
     let matchesType = true;
     if (reportType === "harian") {
       const logDate = new Date(log.tanggalInput).toDateString();
       const todayDate = new Date().toDateString();
       matchesType = logDate === todayDate;
-    } else if (reportType === "semester") {
-      const logDate = new Date(log.tanggalInput);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const sixMonthsAgo = new Date(today);
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-      matchesType = logDate >= sixMonthsAgo && logDate <= new Date();
+    } else if (reportType === "semester1") {
+      // Semester 1 (Ganjil): Agustus s/d Januari (Bulan 8, 9, 10, 11, 12, 1)
+      if (log.tanggalInput) {
+        const d = new Date(log.tanggalInput);
+        const m = d.getMonth() + 1;
+        const y = d.getFullYear().toString();
+        const matchYear = !reportYear || y === reportYear;
+        const isSem1 = m >= 8 || m === 1;
+        matchesType = isSem1 && matchYear;
+      }
+    } else if (reportType === "semester2") {
+      // Semester 2 (Genap): Februari s/d Agustus (Bulan 2, 3, 4, 5, 6, 7, 8)
+      if (log.tanggalInput) {
+        const d = new Date(log.tanggalInput);
+        const m = d.getMonth() + 1;
+        const y = d.getFullYear().toString();
+        const matchYear = !reportYear || y === reportYear;
+        const isSem2 = m >= 2 && m <= 8;
+        matchesType = isSem2 && matchYear;
+      }
+    } else if (reportType === "bulanan") {
+      if (log.tanggalInput) {
+        const d = new Date(log.tanggalInput);
+        const m = (d.getMonth() + 1).toString();
+        const y = d.getFullYear().toString();
+        const matchMonth = !reportMonth || m === reportMonth;
+        const matchYear = !reportYear || y === reportYear;
+        matchesType = matchMonth && matchYear;
+      }
     }
 
     // 3. Filter Status Keterisian (Terpakai / Tidak Terpakai)
@@ -2161,6 +2219,8 @@ const handleSaveEdit = (e) => {
 
     setImportedSchedules([]);
     setImportFileName("");
+    setImportWeekStartDate("");
+    setImportDefaultLab("");
     setActiveTab("data-penggunaan");
   };
 
@@ -2952,44 +3012,74 @@ const handleSaveEdit = (e) => {
                   >
                     <option value="semua">Semua Periode (Kustom)</option>
                     <option value="harian">Jadwal Harian (Hari Ini)</option>
-                    <option value="semester">Jadwal Per Semester (6 Bulan)</option>
+                    <option value="semester1">Semester 1 / Ganjil (Agt - Jan)</option>
+                    <option value="semester2">Semester 2 / Genap (Feb - Agt)</option>
+                    <option value="bulanan">Berdasarkan Bulan</option>
                   </select>
                 </div>
                 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Status Keterisian</label>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Status Pesanan</label>
                   <select
                     value={reportStatus}
                     onChange={(e) => setReportStatus(e.target.value)}
                     className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white cursor-pointer"
                   >
                     <option value="semua">Semua Status</option>
-                    <option value="terpakai">Terpakai</option>
-                    <option value="tidak terpakai">Tidak Terpakai</option>
+                    <option value="terpakai">DIPESAN (Memiliki Logbook)</option>
+                    <option value="tidak terpakai">BELUM DIPESAN (Tanpa Logbook)</option>
                   </select>
                 </div>
                 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tanggal Mulai</label>
-                  <input
-                    type="date"
-                    disabled={reportType !== "semua"}
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 disabled:opacity-50 disabled:bg-slate-50"
-                  />
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tahun Akademik</label>
+                  <select
+                    value={reportYear}
+                    onChange={(e) => setReportYear(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white cursor-pointer"
+                  >
+                    <option value="2024">2024</option>
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                    <option value="2027">2027</option>
+                  </select>
                 </div>
-                
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tanggal Selesai</label>
-                  <input
-                    type="date"
-                    disabled={reportType !== "semua"}
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 disabled:opacity-50 disabled:bg-slate-50"
-                  />
-                </div>
+
+                {reportType === "bulanan" ? (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Pilih Bulan</label>
+                    <select
+                      value={reportMonth}
+                      onChange={(e) => setReportMonth(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white cursor-pointer"
+                    >
+                      <option value="">Semua Bulan</option>
+                      <option value="1">Januari</option>
+                      <option value="2">Februari</option>
+                      <option value="3">Maret</option>
+                      <option value="4">April</option>
+                      <option value="5">Mei</option>
+                      <option value="6">Juni</option>
+                      <option value="7">Juli</option>
+                      <option value="8">Agustus</option>
+                      <option value="9">September</option>
+                      <option value="10">Oktober</option>
+                      <option value="11">November</option>
+                      <option value="12">Desember</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tanggal Mulai (Kustom)</label>
+                    <input
+                      type="date"
+                      disabled={reportType !== "semua"}
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 disabled:opacity-50 disabled:bg-slate-50"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Action Buttons Row */}
@@ -3052,15 +3142,15 @@ const handleSaveEdit = (e) => {
                           </td>
                           <td className="px-6 py-4">
                             <div className="font-semibold text-slate-800">
-                              {log.status === "tidak terpakai" ? "Belum Dipesan" : (log.mahasiswa || "-")}
+                              {log.status === "tidak terpakai" ? "BELUM DIPESAN" : (log.mahasiswa || "-")}
                             </div>
                             <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                              {log.status === "tidak terpakai" ? "Belum Dipesan" : (log.nim || "-")}
+                              {log.status === "tidak terpakai" ? "-" : (log.nim || "-")}
                             </div>
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-slate-700">
-                              {log.status === "tidak terpakai" ? "Belum Dipesan" : (log.numberwa || "-")}
+                              {log.status === "tidak terpakai" ? "-" : (log.numberwa || "-")}
                             </div>
                             <div className={`text-[9px] font-bold mt-1 ${log.status === "tidak terpakai" ? "text-slate-400" : "text-emerald-600"}`}>
                               {log.status === "tidak terpakai" ? "-" : `${log.jumlahHadir || 0} Orang`}
@@ -3068,12 +3158,12 @@ const handleSaveEdit = (e) => {
                           </td>
                           <td className="px-6 py-4">
                             {log.status === "tidak terpakai" ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 border border-red-200 text-red-700 rounded-full text-[10px] font-bold">
-                                <XCircle size={11} className="text-red-400" /> Tidak Terpakai
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-800 rounded-full text-[10px] font-bold">
+                                <XCircle size={11} className="text-amber-500" /> BELUM DIPESAN
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full text-[10px] font-bold">
-                                <CheckCircle size={11} /> Terpakai
+                                <CheckCircle size={11} /> DIPESAN
                               </span>
                             )}
                           </td>
@@ -3191,14 +3281,45 @@ const handleSaveEdit = (e) => {
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Periode:</span>
-                    <input
-                      type="text"
-                      value={periodeSemester}
-                      onChange={(e) => setPeriodeSemester(e.target.value)}
-                      className="px-3 py-1.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 font-semibold text-slate-800"
-                    />
+                    
+                    {/* Dropdown Semester */}
+                    <select
+                      value={analisisSemester}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAnalisisSemester(val);
+                        const semLabel = val === "1"
+                          ? `Semester 1 / Ganjil (Agt ${analisisYear} - Jan ${parseInt(analisisYear) + 1})`
+                          : `Semester 2 / Genap (Feb ${analisisYear} - Agt ${analisisYear})`;
+                        setPeriodeSemester(semLabel);
+                      }}
+                      className="px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 font-semibold text-slate-800 bg-white cursor-pointer"
+                    >
+                      <option value="1">Semester 1 (Agt - Jan)</option>
+                      <option value="2">Semester 2 (Feb - Agt)</option>
+                    </select>
+
+                    {/* Dropdown Tahun */}
+                    <select
+                      value={analisisYear}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAnalisisYear(val);
+                        const semLabel = analisisSemester === "1"
+                          ? `Semester 1 / Ganjil (Agt ${val} - Jan ${parseInt(val) + 1})`
+                          : `Semester 2 / Genap (Feb ${val} - Agt ${val})`;
+                        setPeriodeSemester(semLabel);
+                      }}
+                      className="px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 font-semibold text-slate-800 bg-white cursor-pointer"
+                    >
+                      <option value="2024">2024</option>
+                      <option value="2025">2025</option>
+                      <option value="2026">2026</option>
+                      <option value="2027">2027</option>
+                      <option value="2028">2028</option>
+                    </select>
                   </div>
                   <button
                     onClick={() => window.print()}
@@ -3466,34 +3587,50 @@ const handleSaveEdit = (e) => {
                   {/* Drag and Drop Zone */}
                   <div
                     onDragOver={(e) => {
+                      if (!importWeekStartDate || !importDefaultLab) return;
                       e.preventDefault();
                       setIsDragOver(true);
                     }}
                     onDragLeave={() => setIsDragOver(false)}
                     onDrop={(e) => {
+                      if (!importWeekStartDate || !importDefaultLab) return;
                       e.preventDefault();
                       setIsDragOver(false);
                       handleFileUpload(e);
                     }}
-                    className={`border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center gap-2.5 cursor-pointer relative ${
-                      isDragOver ? "border-blue-500 bg-blue-50/20" : "border-slate-200 hover:border-slate-300 bg-slate-50/20"
+                    className={`border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center gap-2.5 relative ${
+                      (!importWeekStartDate || !importDefaultLab) 
+                        ? "border-slate-200 bg-slate-50/50 opacity-60 cursor-not-allowed"
+                        : isDragOver 
+                          ? "border-blue-500 bg-blue-50/20 cursor-pointer" 
+                          : "border-slate-200 hover:border-slate-300 bg-slate-50/20 cursor-pointer"
                     }`}
                   >
                     <input
                       type="file"
+                      disabled={!importWeekStartDate || !importDefaultLab}
                       accept=".xlsx, .xls, .csv"
                       onChange={handleFileUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      className={`absolute inset-0 opacity-0 w-full h-full ${
+                        (!importWeekStartDate || !importDefaultLab) ? "cursor-not-allowed" : "cursor-pointer"
+                      }`}
                     />
-                    <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                    <div className={`p-3 rounded-2xl ${
+                      (!importWeekStartDate || !importDefaultLab) ? "bg-slate-200 text-slate-400" : "bg-blue-50 text-blue-600"
+                    }`}>
                       <Upload size={22} />
                     </div>
                     <div className="space-y-1">
-                      <span className="text-xs font-bold text-slate-700 block">
+                      <span className={`text-xs font-bold block ${
+                        (!importWeekStartDate || !importDefaultLab) ? "text-slate-400" : "text-slate-700"
+                      }`}>
                         {importFileName ? importFileName : "Pilih file Excel / CSV"}
                       </span>
-                      <span className="text-[9px] text-slate-400 block">
-                        Drag & drop berkas Anda di sini, atau klik untuk mencari
+                      <span className="text-[9px] text-slate-400 block font-medium">
+                        {(!importWeekStartDate || !importDefaultLab)
+                          ? "⚠️ Lengkapi Tanggal Awal & Default Lab di atas terlebih dahulu"
+                          : "Drag & drop berkas Anda di sini, atau klik untuk mencari"
+                        }
                       </span>
                     </div>
                   </div>
@@ -3565,6 +3702,8 @@ const handleSaveEdit = (e) => {
                           onClick={() => {
                             setImportedSchedules([]);
                             setImportFileName("");
+                            setImportWeekStartDate("");
+                            setImportDefaultLab("");
                           }}
                           className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[10px] font-bold transition cursor-pointer"
                         >

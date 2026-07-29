@@ -83,12 +83,12 @@ export const clearAllSchedules = async () => {
 };
 
 /**
- * Ambil semua data riwayat logbook dari backend.
- * GET /get/history/logbook
+ * Ambil semua data riwayat logbook dari backend dengan filter opsional.
+ * GET /get/history/logbook (Mendukung query params: semester, year, month)
  */
-export const getHistoryLogbooks = async () => {
+export const getHistoryLogbooks = async (params = {}) => {
   try {
-    const response = await API.get("/get/history/logbook");
+    const response = await API.get("/get/history/logbook", { params });
     const data = Array.isArray(response.data)
       ? response.data
       : response.data?.message || response.data?.data || response.data?.results || [];
@@ -104,12 +104,12 @@ export const getHistoryLogbooks = async () => {
 };
 
 /**
- * Ambil semua data riwayat jadwal dari backend.
- * GET /get/history/schadule
+ * Ambil semua data riwayat jadwal dari backend dengan filter opsional.
+ * GET /get/history/schadule (Mendukung query params: month, year, semester, group_by)
  */
-export const getHistorySchedules = async () => {
+export const getHistorySchedules = async (params = {}) => {
   try {
-    const response = await API.get("/get/history/schadule");
+    const response = await API.get("/get/history/schadule", { params });
     const data = Array.isArray(response.data)
       ? response.data
       : response.data?.message || response.data?.data || response.data?.results || [];

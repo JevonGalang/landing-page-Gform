@@ -1,79 +1,98 @@
-/**
- * UsageGuide — Step-by-step guide for lab booking procedure.
- * Ported from Dashboard B (UserGuide.jsx) with enhanced content.
- */
+import { BookOpen, AlertCircle } from "lucide-react";
+
+// Static imports of guide images
+import tutor1 from "../assets/TUTOR1.png";
+import tutor3 from "../assets/TUTOR3.png";
+import tutor4 from "../assets/TUTOR4.png";
+
 export default function UsageGuide() {
   const steps = [
     {
       step: "01",
-      title: "Pilih Ruang & Jadwal",
-      desc: 'Klik salah satu card laboratorium di halaman Dashboard untuk memilih ruang, atau langsung buka menu "Pemesanan Ruang". Cek ketersediaan di halaman Informasi Lab terlebih dahulu.',
+      title: "Pilih Ruang & Cek Jadwal",
+      desc: "Masuk ke dashboard Lab MaTiSi, lihat daftar laboratorium yang tersedia, lalu periksa ketersediaan ruangan yang ingin dipesan.",
+      image: tutor1,
     },
     {
       step: "02",
-      title: "Isi Formulir Pemesanan",
-      desc: "Lengkapi formulir pengajuan ruang: data penanggung jawab, nomor WhatsApp, mata kuliah (jika terjadwal), tanggal, jam masuk, jumlah peserta, dan keterangan kegiatan.",
+      title: "Buka & Isi Formulir Pemesanan",
+      desc: 'Klik menu "Pemesanan Ruang" di sidebar kiri. Lengkapi data seperti nama penanggung jawab, nomor WhatsApp aktif, nama kegiatan/mata kuliah, serta tanggal dan jam peminjaman.',
+      image: tutor3,
     },
     {
       step: "03",
-      title: "Check-in & Gunakan Lab",
-      desc: "Datang tepat waktu ke laboratorium sesuai sesi yang dipesan. Hubungi laboran/admin di lokasi untuk membuka ruangan dan memulai kegiatan.",
-    },
+      title: "Pantau Status & Hubungi Laboran",
+      desc: 'Setelah kirim, periksa status pemesanan Anda secara berkala. Koordinasikan dengan laboran atau admin melalui halaman "Kontak & Bantuan" untuk kunci ruangan.',
+      image: tutor4,
+    }
   ];
 
   return (
-    <div className="px-8 max-w-3xl mx-auto">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <div className="mb-8 text-center">
-          <h2 className="text-xl font-bold text-gray-800">
-            Alur Prosedur Peminjaman
-          </h2>
-          <p className="text-gray-400 text-xs font-medium mt-1">
-            Ikuti langkah-langkah mudah untuk menggunakan fasilitas Lab MaTiSi
-          </p>
+    <div className="px-4 md:px-8 max-w-3xl mx-auto">
+      <div className="bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm">
+        
+        {/* Header Sederhana */}
+        <div className="mb-8 flex items-start gap-3.5 pb-5 border-b border-slate-100">
+          <div className="p-2.5 bg-blue-50 text-blue-700 rounded-2xl shrink-0">
+            <BookOpen size={22} />
+          </div>
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-800 font-display">
+              Panduan Peminjaman Laboratorium MaTiSi
+            </h2>
+            <p className="text-slate-500 text-xs font-medium mt-1 leading-relaxed">
+              Ikuti panduan mudah ini untuk melakukan pemesanan fasilitas laboratorium
+            </p>
+          </div>
         </div>
 
-        <div className="relative border-l-2 border-blue-100 ml-4 md:ml-6 space-y-8">
+        {/* Daftar Langkah Panduan */}
+        <div className="space-y-10">
           {steps.map((item, index) => (
-            <div key={index} className="relative pl-6 md:pl-8">
-              <div className="absolute -left-[17px] top-0 bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-md shadow-blue-200">
+            <div key={index} className="flex gap-4 items-start">
+              {/* Nomor Langkah Bulat */}
+              <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-extrabold text-xs shrink-0 shadow-sm shadow-blue-100 mt-0.5">
                 {item.step}
               </div>
-              <div>
-                <h4 className="font-bold text-gray-800 text-base">
+              
+              <div className="flex-1 min-w-0">
+                <h4 className="font-extrabold text-slate-800 text-sm font-display">
                   {item.title}
                 </h4>
-                <p className="text-gray-500 text-sm mt-1 leading-relaxed">
+                <p className="text-slate-500 text-xs mt-1 leading-relaxed font-medium">
                   {item.desc}
                 </p>
+
+                {/* Gambar Screenshot Statis */}
+                {item.image && (
+                  <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-xs mt-3 transition hover:shadow-md">
+                    <img
+                      src={item.image}
+                      alt={`Screenshot Langkah ${item.step}`}
+                      className="w-full h-auto object-cover max-h-[350px] block"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           ))}
         </div>
 
-        {/* Tips section */}
-        <div className="mt-8 p-4 bg-blue-50/30 border border-blue-100/50 rounded-xl">
-          <h4 className="text-sm font-bold text-blue-800 mb-2">
-            💡 Tips Penting
-          </h4>
-          <ul className="text-xs text-blue-700/80 space-y-1.5 font-medium">
-            <li>
-              • Ajukan pemesanan minimal <strong>2 hari sebelum</strong> tanggal
-              kegiatan.
-            </li>
-            <li>
-              • Pastikan jumlah peserta tidak melebihi kapasitas laboratorium.
-            </li>
-            <li>
-              • Untuk kegiatan terjadwal (mata kuliah), sertakan nama dosen
-              pengampu.
-            </li>
-            <li>
-              • Jika ada perubahan jadwal, batalkan pemesanan lama dan ajukan
-              ulang.
-            </li>
-          </ul>
+        {/* Kotak Info/Catatan Penting */}
+        <div className="mt-10 p-5 bg-amber-50/50 border border-amber-100 rounded-2xl flex gap-3.5">
+          <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+          <div>
+            <h5 className="text-xs font-extrabold text-amber-800">
+              Catatan Penting
+            </h5>
+            <ul className="text-[11px] text-amber-700/90 space-y-1.5 font-semibold mt-2.5 list-disc pl-4">
+              <li>Lakukan pemesanan lab minimal <strong> sebelum pelaksanaan kegiatan.</strong></li>
+              <li>Pastikan nomor WhatsApp yang Anda masukkan valid dan aktif agar mudah dihubungi oleh laboran.</li>
+              <li>Jika ada pembatalan peminjaman, segera hubungi admin melalui menu <strong>Kontak & Bantuan</strong>.</li>
+            </ul>
+          </div>
         </div>
+
       </div>
     </div>
   );
