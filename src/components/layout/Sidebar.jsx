@@ -92,7 +92,7 @@ const SidebarContent = ({ showCloseBtn = false, setSidebarOpen }) => {
           </div>
         </div>
         <a
-          href="https://wa.me/628123456789"
+          href="https://wa.me/6282114720105"
           target="_blank"
           rel="noopener noreferrer"
           onClick={() => setSidebarOpen(false)}

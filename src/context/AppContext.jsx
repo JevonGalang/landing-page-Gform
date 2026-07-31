@@ -486,36 +486,50 @@ export const AppProvider = ({ children }) => {
   const refreshData = useCallback(async () => {
     setIsDataLoading(true);
     try {
-      const [schedRes, logRes, histSchedRes, histLogRes] = await Promise.all([
-        getAllSchedules(),
-        getAllLogbooks(),
-        getHistorySchedules(),
-        getHistoryLogbooks(),
-      ]);
+      const isUserAdmin = isAuthenticated();
+      if (isUserAdmin) {
+        const [schedRes, logRes, histSchedRes, histLogRes] = await Promise.all([
+          getAllSchedules(false),
+          getAllLogbooks(),
+          getHistorySchedules(),
+          getHistoryLogbooks(),
+        ]);
 
-      const rawSchedules = schedRes.success
-        ? (Array.isArray(schedRes.data) ? schedRes.data : [])
-        : [];
-      const rawLogbooks = logRes.success
-        ? (Array.isArray(logRes.data) ? logRes.data : [])
-        : [];
+        const rawSchedules = schedRes.success
+          ? (Array.isArray(schedRes.data) ? schedRes.data : [])
+          : [];
+        const rawLogbooks = logRes.success
+          ? (Array.isArray(logRes.data) ? logRes.data : [])
+          : [];
 
-      const rawHistSchedules = histSchedRes.success
-        ? (Array.isArray(histSchedRes.data) ? histSchedRes.data : [])
-        : [];
-      const rawHistLogbooks = histLogRes.success
-        ? (Array.isArray(histLogRes.data) ? histLogRes.data : [])
-        : [];
+        const rawHistSchedules = histSchedRes.success
+          ? (Array.isArray(histSchedRes.data) ? histSchedRes.data : [])
+          : [];
+        const rawHistLogbooks = histLogRes.success
+          ? (Array.isArray(histLogRes.data) ? histLogRes.data : [])
+          : [];
 
-      // Simpan ke refs
-      rawSchedulesRef.current = rawSchedules;
-      rawLogbooksRef.current = rawLogbooks;
+        // Simpan ke refs
+        rawSchedulesRef.current = rawSchedules;
+        rawLogbooksRef.current = rawLogbooks;
 
-      // Map dan merge data aktif
-      mergeAndUpdateSchedules(rawSchedules, rawLogbooks);
-      
-      // Map dan merge data history
-      mergeAndUpdateHistorySchedules(rawHistSchedules, rawHistLogbooks);
+        // Map dan merge data aktif
+        mergeAndUpdateSchedules(rawSchedules, rawLogbooks);
+        
+        // Map dan merge data history
+        mergeAndUpdateHistorySchedules(rawHistSchedules, rawHistLogbooks);
+      } else {
+        const schedRes = await getAllSchedules(true);
+        const rawSchedules = schedRes.success
+          ? (Array.isArray(schedRes.data) ? schedRes.data : [])
+          : [];
+
+        rawSchedulesRef.current = rawSchedules;
+        rawLogbooksRef.current = [];
+
+        mergeAndUpdateSchedules(rawSchedules, []);
+        mergeAndUpdateHistorySchedules([], []);
+      }
     } catch (err) {
       console.error("Gagal mengambil data dari server:", err);
     } finally {
@@ -597,7 +611,7 @@ export const AppProvider = ({ children }) => {
       disconnectSocket();
       setSocketConnected(false);
     };
-  }, [mergeAndUpdateSchedules]);
+  }, [mergeAndUpdateSchedules, isAdminAuthenticated]);
 
   return (
     <AppContext.Provider

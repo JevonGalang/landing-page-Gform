@@ -13,7 +13,7 @@ import API from "./api";
  * @param {string} data.nomorWa - Nomor WhatsApp
  * @returns {Promise<{ success: boolean, message?: string, data?: any }>}
  */
-export const submitBooking = async (data) => {
+export const submitBooking = async (data, isPublic = true) => {
   try {
     const payload = {
       schadule: parseInt(data.scheduleId, 10),
@@ -23,7 +23,8 @@ export const submitBooking = async (data) => {
       jumlahPeserta: parseInt(data.jumlahPeserta, 10),
       nomorWa: data.nomorWa.trim(),
     };
-    const response = await API.post("/post/logbook", payload);
+    const endpoint = isPublic ? "/post/public/logbook" : "/post/logbook";
+    const response = await API.post(endpoint, payload);
     return { success: true, data: response.data };
   } catch (error) {
     const message =

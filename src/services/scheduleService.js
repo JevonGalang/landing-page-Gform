@@ -41,14 +41,15 @@ export const createSchedule = async (data) => {
 };
 
 /**
- * Ambil semua jadwal kuliah (Public - tanpa JWT).
- * GET /get/penggunaanlab
+ * Ambil semua jadwal kuliah.
  *
+ * @param {boolean} isPublic - Jika true, gunakan endpoint public /get/public/jadwal. Jika false, gunakan /get/penggunaanlab.
  * @returns {Promise<{ success: boolean, data?: Array, message?: string }>}
  */
-export const getAllSchedules = async () => {
+export const getAllSchedules = async (isPublic = true) => {
   try {
-    const response = await API.get("/get/penggunaanlab");
+    const endpoint = isPublic ? "/get/public/jadwal" : "/get/penggunaanlab";
+    const response = await API.get(endpoint);
     const data = Array.isArray(response.data)
       ? response.data
       : response.data?.message || response.data?.data || response.data?.results || [];

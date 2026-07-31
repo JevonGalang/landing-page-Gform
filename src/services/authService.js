@@ -127,3 +127,22 @@ export const logoutAdmin = () => {
   localStorage.removeItem("jwt");
   localStorage.removeItem("jwt_token");
 };
+
+/**
+ * Ambil informasi RBAC user aktif dari backend.
+ * GET /get/rbac/saya
+ */
+export const getCurrentUserRbac = async () => {
+  try {
+    const response = await API.get("/get/rbac/saya");
+    const data = response.data?.message || response.data?.data || null;
+    return { success: true, data };
+  } catch (error) {
+    const message =
+      error.response?.data?.message ||
+      error.response?.data?.massage ||
+      error.response?.data?.error ||
+      "Gagal memuat informasi akses user.";
+    return { success: false, message };
+  }
+};

@@ -10,9 +10,9 @@ import {
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import "jspdf-autotable";
-import { loginAdmin, logoutAdmin } from "../services/authService";
+import { loginAdmin, logoutAdmin, getCurrentUserRbac } from "../services/authService";
 import { createSchedule, getJadwalBackend } from "../services/scheduleService";
-import { deleteEntry, deleteLogbookEntry, clearAllLogbooks, clearAllSchedules, getHistoryLogbooks, getHistorySchedules, postHistoryLogbook, postHistorySchedule, archiveSchedule } from "../services/historyService";
+import { deleteEntry, deleteLogbookEntry, clearAllLogbooks, clearAllSchedules, getHistoryLogbooks, getHistorySchedules, postHistoryLogbook, postHistorySchedule, archiveSchedule, getHistoryPerhitungan, getHistoryPersentase } from "../services/historyService";
 import { updateBookingStatus, submitBooking } from "../services/bookingService";
 import { getLabPersentase } from "../services/laboratoryService";
 import Swal from "sweetalert2"
@@ -52,9 +52,36 @@ export default function AdminPanel() {
     "komputasi"
   ];
 
+  const [userProfile, setUserProfile] = useState(null);
+
+  const loadUserProfile = useCallback(async () => {
+    try {
+      const result = await getCurrentUserRbac();
+      if (result.success && result.data) {
+        setUserProfile(result.data);
+      } else {
+        setUserProfile(null);
+      }
+    } catch (e) {
+      console.error("Gagal memuat profil RBAC:", e);
+      setUserProfile(null);
+    }
+  }, []);
+
   const filteredLaboratories = (laboratories || []).filter(lab => {
     const nameLower = (lab.name || "").toLowerCase();
-    return allowedMatisiLabs.some(keyword => nameLower.includes(keyword));
+    
+    // Pastikan lab termasuk rumpun MaTiSi
+    const isMatisi = allowedMatisiLabs.some(keyword => nameLower.includes(keyword));
+    if (!isMatisi) return false;
+
+    // Jika userProfile terisi dan akses_semua_lab false, filter berdasarkan lab yang boleh diakses
+    if (userProfile && userProfile.akses_semua_lab === false && Array.isArray(userProfile.labs)) {
+      const allowedLabIds = new Set(userProfile.labs.map(l => l.id_lab));
+      return allowedLabIds.has(lab.id);
+    }
+    
+    return true;
   });
 
   const navigate = useNavigate();
@@ -71,9 +98,12 @@ export default function AdminPanel() {
 
   useEffect(() => {
     if (isAdminAuthenticated) {
+      loadUserProfile();
       refreshHistoryData();
+    } else {
+      setUserProfile(null);
     }
-  }, [isAdminAuthenticated]);
+  }, [isAdminAuthenticated, loadUserProfile]);
 
   // Jadwal Kuliah Form States
   const [inputLab, setInputLab] = useState("");
@@ -198,6 +228,7 @@ export default function AdminPanel() {
   // States untuk data riwayat backend
   const [historySchedules, setHistorySchedules] = useState([]);
   const [historyLogbooks, setHistoryLogbooks] = useState([]);
+  const [historyPerhitungan, setHistoryPerhitungan] = useState(null);
 
   // Fetch percentages from backend
   const loadLabPercentages = useCallback(async () => {
@@ -242,6 +273,25 @@ export default function AdminPanel() {
     }
   }, []);
 
+  // Fetch perhitungan dinamis dari backend GET /get/history/perhitungan
+  const loadHistoryPerhitungan = useCallback(async (customParams = {}) => {
+    try {
+      const params = {
+        lab_id: selectedLabId,
+        semester: analisisSemester,
+        year: analisisYear,
+        onlyAuto: persentaseOnlyAuto,
+        ...customParams,
+      };
+      const result = await getHistoryPerhitungan(params);
+      if (result.success && result.data) {
+        setHistoryPerhitungan(result.data);
+      }
+    } catch (e) {
+      console.error("Gagal memuat history perhitungan:", e);
+    }
+  }, [selectedLabId, analisisSemester, analisisYear, persentaseOnlyAuto]);
+
   // Wrapper untuk refresh seluruh data di admin panel agar selalu sinkron
   const refreshAllAdminData = useCallback(async () => {
     try {
@@ -256,11 +306,12 @@ export default function AdminPanel() {
 
   useEffect(() => {
     if (isAdminAuthenticated) {
+      loadUserProfile();
       loadLabPercentages();
       loadBackendSchedules();
       refreshHistoryData();
     }
-  }, [isAdminAuthenticated, loadLabPercentages, loadBackendSchedules, refreshHistoryData]);
+  }, [isAdminAuthenticated, loadUserProfile, loadLabPercentages, loadBackendSchedules, refreshHistoryData]);
 
   // Re-fetch data riwayat ketika filter periode (semester / bulan / tahun) pada tab laporan berubah
   useEffect(() => {
@@ -280,8 +331,9 @@ export default function AdminPanel() {
       refreshHistoryData(params);
     } else if (activeTab === "analisis-lab") {
       refreshHistoryData({ semester: analisisSemester, year: analisisYear });
+      loadHistoryPerhitungan({ semester: analisisSemester, year: analisisYear, lab_id: selectedLabId });
     }
-  }, [isAdminAuthenticated, activeTab, reportType, reportYear, reportMonth, analisisSemester, analisisYear, refreshHistoryData]);
+  }, [isAdminAuthenticated, activeTab, reportType, reportYear, reportMonth, analisisSemester, analisisYear, selectedLabId, refreshHistoryData, loadHistoryPerhitungan]);
 
   // Reset impor states saat tab "buat-jadwal" baru dibuka/di-mount
   useEffect(() => {
@@ -468,7 +520,7 @@ export default function AdminPanel() {
                   kelas: "UMPTKIN",
                   jumlahPeserta: labCapacity,
                   nomorWa: "-",
-                });
+                }, false);
                 console.log(`[UM PTKIN] Logbook sesi ${session.jamMulai} dibuat:`, bookingResult);
 
                 if (bookingResult.success) {
@@ -2408,6 +2460,18 @@ const handleSaveEdit = (e) => {
               <span className="text-[10px] text-slate-400 font-bold tracking-wider uppercase">Log Book Lab</span>
             </div>
           </div>
+          
+          {userProfile?.user && (
+            <div className="px-4 py-3 rounded-2xl bg-blue-50/40 border border-blue-100/50 flex flex-col gap-0.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Petugas Aktif</span>
+              <span className="text-xs font-extrabold text-slate-800 font-display truncate">
+                {userProfile.user.username}
+              </span>
+              <span className="text-[9px] font-extrabold text-blue-600 bg-blue-100/50 px-2 py-0.5 rounded-md inline-block w-max uppercase tracking-wider mt-1">
+                Role: {userProfile.user.role}
+              </span>
+            </div>
+          )}
 
           {/* Realtime Status Indicator */}
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-100 bg-slate-50/50">
@@ -2970,14 +3034,16 @@ const handleSaveEdit = (e) => {
                     <Trash2 size={14} />
                     Hapus Terpilih
                   </button>
-                  <button
-                    onClick={handleClearAllData}
-                    className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition duration-200 cursor-pointer shadow-xs"
-                    title="Kosongkan seluruh data logbook dan jadwal kuliah"
-                  >
-                    <Trash2 size={14} />
-                    Hapus Semua Data
-                  </button>
+                  {(userProfile?.user?.role === "admin" || userProfile?.akses_semua_lab === true) && (
+                    <button
+                      onClick={handleClearAllData}
+                      className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition duration-200 cursor-pointer shadow-xs"
+                      title="Kosongkan seluruh data logbook dan jadwal kuliah"
+                    >
+                      <Trash2 size={14} />
+                      Hapus Semua Data
+                    </button>
+                  )}
                   <button
                     onClick={() => setSelectedLogIds([])}
                     className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-bold transition duration-200 cursor-pointer"
@@ -3459,12 +3525,30 @@ const handleSaveEdit = (e) => {
                     {/* Math calculations description */}
                     <div className="pt-2 text-[10.5px] leading-relaxed text-black font-medium space-y-1">
                       <p className="font-bold">Waktu penggunaan laboratorium</p>
-                      <p>
-                        Kegiatan praktikum: {totalJadwal} x {jamPerSlotFormatted} jam x 16 pekan = {totalJamSemester} jam
-                      </p>
-                      <p className="font-bold uppercase tracking-wider">
-                        TOTAL : {totalJamSemester} Jam
-                      </p>
+                      {historyPerhitungan?.ringkasan ? (
+                        <>
+                          <p>
+                            Kegiatan praktikum: {historyPerhitungan.ringkasan.n_jam ?? 0} jam/pekan x {historyPerhitungan.ringkasan.pekan ?? 16} pekan = {historyPerhitungan.ringkasan.a_akumulasi_jam ?? historyPerhitungan.ringkasan.c_jam ?? 0} jam
+                          </p>
+                          {historyPerhitungan.ringkasan.n_menit !== undefined && (
+                            <p className="text-[9.5px] text-black font-sans">
+                              (Rincian menit: {historyPerhitungan.ringkasan.n_menit} menit/pekan x {historyPerhitungan.ringkasan.pekan} pekan = {historyPerhitungan.ringkasan.c_menit} menit = {historyPerhitungan.ringkasan.a_akumulasi_jam} jam)
+                            </p>
+                          )}
+                          <p className="font-bold uppercase tracking-wider">
+                            TOTAL : {historyPerhitungan.ringkasan.a_akumulasi_jam ?? 0} Jam
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p>
+                            Kegiatan praktikum: {totalJadwal} x {jamPerSlotFormatted} jam x 16 pekan = {totalJamSemester} jam
+                          </p>
+                          <p className="font-bold uppercase tracking-wider">
+                            TOTAL : {totalJamSemester} Jam
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -3474,7 +3558,11 @@ const handleSaveEdit = (e) => {
                     <div className="text-[10.5px] leading-relaxed text-black pl-2 font-medium">
                       <p className="mb-2">Persentase penggunaan laboratorium terhadap total waktu operasional selama satu semester:</p>
                       <p className="font-bold bg-slate-50 border border-slate-100 p-2.5 rounded-lg inline-block text-[11px] text-slate-800 print:bg-white print:border-none print:p-0">
-                        {totalJamSemester} jam / {waktuOperasionalSemester} jam x 100% = {persenPenggunaanFormatted} %
+                        {historyPerhitungan?.ringkasan ? (
+                          `${historyPerhitungan.ringkasan.a_akumulasi_jam ?? 0} jam / ${historyPerhitungan.ringkasan.jam_operasional_total ?? 680} jam x 100% = ${historyPerhitungan.ringkasan.persentase_formatted || `${historyPerhitungan.ringkasan.persentase}%`}`
+                        ) : (
+                          `${totalJamSemester} jam / ${waktuOperasionalSemester} jam x 100% = ${persenPenggunaanFormatted} %`
+                        )}
                       </p>
                     </div>
                   </div>

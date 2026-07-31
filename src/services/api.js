@@ -34,15 +34,43 @@ API.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // Console log for API payload and query debug
+    console.log(
+      `%c[API Request] %c${config.method?.toUpperCase()} %c${config.url}`,
+      "color: #4b8fca; font-weight: bold;",
+      "color: #22c55e; font-weight: bold;",
+      "color: #334155; font-weight: medium;",
+      "\n- Params:", config.params || "none",
+      "\n- Payload:", config.data || "none",
+      "\n- Headers:", config.headers
+    );
+
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Response interceptor — handle common errors
+// Response interceptor — handle common errors and log responses
 API.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(
+      `%c[API Response Success] %c${response.config.url}`,
+      "color: #22c55e; font-weight: bold;",
+      "color: #334155;",
+      "\n- Status:", response.status,
+      "\n- Response Data:", response.data
+    );
+    return response;
+  },
   (error) => {
+    console.error(
+      `%c[API Response Error] %c${error.config?.url || "Request failed"}`,
+      "color: #ef4444; font-weight: bold;",
+      "color: #334155;",
+      "\n- Status:", error.response?.status || "Network Error",
+      "\n- Error Details:", error.response?.data || error.message
+    );
     if (error.response?.status === 401) {
       // Clear invalid auth and tokens
       localStorage.removeItem("matisi_admin_auth");

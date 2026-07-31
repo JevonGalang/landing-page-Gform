@@ -178,4 +178,50 @@ export const archiveSchedule = async (id) => {
   }
 };
 
+/**
+ * Ambil data perhitungan dinamis jam & persentase penggunaan lab dari backend.
+ * GET /get/history/perhitungan
+ * @param {object} params — Query parameters: mode, pekan, jam_per_hari, hari_per_pekan, operasional, lab_id, month, year, semester
+ */
+export const getHistoryPerhitungan = async (params = {}) => {
+  try {
+    console.log("%c[API Request] GET /get/history/perhitungan", "color: #4b8fca; font-weight: bold;", "\n- Params:", params);
+    const response = await API.get("/get/history/perhitungan", { params });
+    const data = response.data?.message || response.data?.data || response.data || null;
+    console.log("%c[API Response Success] /get/history/perhitungan", "color: #22c55e; font-weight: bold;", "\n- Data Perhitungan:", data);
+    return { success: true, data };
+  } catch (error) {
+    console.error("%c[API Response Error] /get/history/perhitungan", "color: #ef4444; font-weight: bold;", error.response?.data || error.message);
+    const message =
+      error.response?.data?.message ||
+      error.response?.data?.massage ||
+      error.response?.data?.error ||
+      "Gagal memuat data perhitungan dari backend.";
+    return { success: false, message };
+  }
+};
+
+/**
+ * Ambil data persentase penggunaan lab dari backend.
+ * GET /get/history/persentase
+ * @param {object} params — Query parameters: mode, pekan, operasional, lab_id, month, year, semester
+ */
+export const getHistoryPersentase = async (params = {}) => {
+  try {
+    console.log("%c[API Request] GET /get/history/persentase", "color: #4b8fca; font-weight: bold;", "\n- Params:", params);
+    const response = await API.get("/get/history/persentase", { params });
+    const data = response.data?.message || response.data?.data || response.data || null;
+    console.log("%c[API Response Success] /get/history/persentase", "color: #22c55e; font-weight: bold;", "\n- Data Persentase:", data);
+    return { success: true, data };
+  } catch (error) {
+    console.error("%c[API Response Error] /get/history/persentase", "color: #ef4444; font-weight: bold;", error.response?.data || error.message);
+    const message =
+      error.response?.data?.message ||
+      error.response?.data?.massage ||
+      error.response?.data?.error ||
+      "Gagal memuat data persentase dari backend.";
+    return { success: false, message };
+  }
+};
+
 

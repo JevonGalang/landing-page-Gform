@@ -48,6 +48,21 @@ export const connectSocket = ({ onConnect, onDisconnect, onError } = {}) => {
     socket = null;
   }
 
+  // Try to get token from localStorage
+  let token = null;
+  const authData = localStorage.getItem("matisi_admin_auth");
+  if (authData) {
+    try {
+      const parsed = JSON.parse(authData);
+      token = parsed?.token;
+    } catch (e) {
+      // Ignore
+    }
+  }
+  if (!token) {
+    token = localStorage.getItem("token") || localStorage.getItem("jwt") || localStorage.getItem("jwt_token");
+  }
+
   socket = io(SOCKET_URL, {
     // Transport strategy: coba websocket dulu, fallback ke polling
     transports: ["websocket", "polling"],
@@ -58,6 +73,9 @@ export const connectSocket = ({ onConnect, onDisconnect, onError } = {}) => {
     reconnectionDelayMax: 5000,
     // Timeout
     timeout: 10000,
+    auth: {
+      token: token || ""
+    }
   });
 
   // Connection lifecycle events
