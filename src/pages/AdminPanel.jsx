@@ -3309,6 +3309,16 @@ const handleSaveEdit = (e) => {
               </div>
             </div>
 
+            {/* Notes Card Info */}
+            <div className="bg-blue-50/70 border border-blue-200/60 rounded-2xl p-3.5 sm:p-4 flex items-center gap-3 shadow-xs">
+              <div className="w-8 h-8 rounded-xl bg-blue-100/80 text-blue-600 flex items-center justify-center shrink-0">
+                <Info size={18} />
+              </div>
+              <p className="text-xs font-medium text-blue-800 leading-relaxed">
+                Data yang tidak di maintenance atau olah selama 2 minggu akan otomatis masuk kedalam laporan
+              </p>
+            </div>
+
             {/* Table */}
             <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-xs">
               <div className="overflow-x-auto">
