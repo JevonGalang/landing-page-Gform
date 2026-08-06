@@ -58,7 +58,7 @@ export default function Navbar() {
   };
 
   return (
-    <header className="navbar-container">
+    <header className="navbar-container print:hidden">
       {/* Menu Button (mobile only) */}
       <button
         onClick={() => setSidebarOpen(true)}

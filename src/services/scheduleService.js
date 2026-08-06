@@ -28,9 +28,12 @@ export const createSchedule = async (data) => {
       sourcenya: data.source || "manual",
       is_auto: data.is_auto ?? false,
     };
+    console.log("%c[API Request] POST /post/formadmin", "color: #3b82f6; font-weight: bold;", payload);
     const response = await API.post("/post/formadmin", payload);
+    console.log("%c[API Response Success] POST /post/formadmin", "color: #22c55e; font-weight: bold;", response.data);
     return { success: true, data: response.data };
   } catch (error) {
+    console.error("%c[API Response Error] POST /post/formadmin", "color: #ef4444; font-weight: bold;", error.response?.data || error.message);
     const message =
       error.response?.data?.message ||
       error.response?.data?.massage ||
@@ -49,12 +52,15 @@ export const createSchedule = async (data) => {
 export const getAllSchedules = async (isPublic = true) => {
   try {
     const endpoint = isPublic ? "/get/public/jadwal" : "/get/penggunaanlab";
+    console.log(`%c[API Request] GET ${endpoint}`, "color: #3b82f6; font-weight: bold;");
     const response = await API.get(endpoint);
     const data = Array.isArray(response.data)
       ? response.data
       : response.data?.message || response.data?.data || response.data?.results || [];
+    console.log(`%c[API Response Success] GET ${endpoint}`, "color: #22c55e; font-weight: bold;", `- ${data.length} items received.`);
     return { success: true, data };
   } catch (error) {
+    console.error("%c[API Response Error] GET schedule endpoint", "color: #ef4444; font-weight: bold;", error.response?.data || error.message);
     const message =
       error.response?.data?.message ||
       error.response?.data?.error ||
@@ -71,12 +77,15 @@ export const getAllSchedules = async (isPublic = true) => {
  */
 export const getJadwalBackend = async () => {
   try {
+    console.log("%c[API Request] GET /get/jadwal", "color: #3b82f6; font-weight: bold;");
     const response = await API.get("/get/jadwal");
     const data = Array.isArray(response.data)
       ? response.data
       : response.data?.message || response.data?.data || response.data?.results || [];
+    console.log("%c[API Response Success] GET /get/jadwal", "color: #22c55e; font-weight: bold;", `- ${data.length} items received.`);
     return { success: true, data };
   } catch (error) {
+    console.error("%c[API Response Error] GET /get/jadwal", "color: #ef4444; font-weight: bold;", error.response?.data || error.message);
     const message =
       error.response?.data?.message ||
       error.response?.data?.error ||

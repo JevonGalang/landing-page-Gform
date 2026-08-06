@@ -111,13 +111,13 @@ export default function Sidebar() {
   return (
     <>
       {/* Desktop Sidebar (Permanent) */}
-      <aside className="sidebar">
+      <aside className="sidebar print:hidden">
         <SidebarContent showCloseBtn={false} setSidebarOpen={setSidebarOpen} />
       </aside>
 
       {/* Mobile Drawer Sidebar */}
       <div 
-        className={`sidebar-drawer-overlay ${
+        className={`sidebar-drawer-overlay print:hidden ${
           isSidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`} 
         onClick={() => setSidebarOpen(false)}

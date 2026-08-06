@@ -745,3 +745,84 @@ body {
   from { width: 100%; }
   to { width: 0%; }
 }
+
+@media print {
+  /* Hide unwanted navigation and layout elements completely */
+  .sidebar,
+  .navbar-container,
+  .sidebar-drawer-overlay,
+  .sidebar-drawer-aside,
+  .lg\:hidden.bg-white.px-6.py-4 { /* Mobile header in AdminPanel */
+    display: none !important;
+  }
+
+  /* Reset layout structure for printing to avoid multi-page clipping and unnecessary blanks */
+  html, body, #root {
+    background: white !important;
+    background-color: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Main wrapper and layout container overrides */
+  .flex.min-h-screen,
+  .flex-1.flex.flex-col,
+  .flex.flex-col.lg\:flex-row.min-h-\[85vh\] {
+    display: block !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  /* Push footer to the bottom of the page when data is small */
+  main {
+    display: block !important;
+    height: auto !important;
+    min-height: 180mm !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  /* Ensure print overrides work cleanly */
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .print\:block {
+    display: block !important;
+  }
+
+  /* Reset table borders and layout for printer */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+
+  .footer-container {
+    page-break-inside: avoid !important;
+    margin-top: 20px !important;
+  }
+
+  /* Margins for the physical paper */
+  @page {
+    size: auto;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+}

@@ -224,4 +224,27 @@ export const getHistoryPersentase = async (params = {}) => {
   }
 };
 
+/**
+ * Ambil data riwayat terbaru gabungan active + history.
+ * GET /get/history/terbaru
+ * @param {object} params — Query parameters: semester
+ */
+export const getHistoryTerbaru = async (params = {}) => {
+  try {
+    console.log("%c[API Request] GET /get/history/terbaru", "color: #4b8fca; font-weight: bold;", "\n- Params:", params);
+    const response = await API.get("/get/history/terbaru", { params });
+    const data = response.data?.message || response.data?.data || response.data || null;
+    console.log("%c[API Response Success] /get/history/terbaru", "color: #22c55e; font-weight: bold;", "\n- Data Terbaru:", data);
+    return { success: true, data };
+  } catch (error) {
+    console.error("%c[API Response Error] /get/history/terbaru", "color: #ef4444; font-weight: bold;", error.response?.data || error.message);
+    const message =
+      error.response?.data?.message ||
+      error.response?.data?.massage ||
+      error.response?.data?.error ||
+      "Gagal memuat data terbaru dari backend.";
+    return { success: false, message };
+  }
+};
+
 

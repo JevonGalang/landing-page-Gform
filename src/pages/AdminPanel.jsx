@@ -12,7 +12,7 @@ import { jsPDF } from "jspdf";
 import "jspdf-autotable";
 import { loginAdmin, logoutAdmin, getCurrentUserRbac } from "../services/authService";
 import { createSchedule, getJadwalBackend } from "../services/scheduleService";
-import { deleteEntry, deleteLogbookEntry, clearAllLogbooks, clearAllSchedules, getHistoryLogbooks, getHistorySchedules, postHistoryLogbook, postHistorySchedule, archiveSchedule, getHistoryPerhitungan, getHistoryPersentase } from "../services/historyService";
+import { deleteEntry, deleteLogbookEntry, clearAllLogbooks, clearAllSchedules, getHistoryLogbooks, getHistorySchedules, postHistoryLogbook, postHistorySchedule, archiveSchedule, getHistoryPerhitungan, getHistoryPersentase, getHistoryTerbaru } from "../services/historyService";
 import { updateBookingStatus, submitBooking } from "../services/bookingService";
 import { getLabPersentase } from "../services/laboratoryService";
 import Swal from "sweetalert2"
@@ -228,7 +228,9 @@ export default function AdminPanel() {
   // States untuk data riwayat backend
   const [historySchedules, setHistorySchedules] = useState([]);
   const [historyLogbooks, setHistoryLogbooks] = useState([]);
-  const [historyPerhitungan, setHistoryPerhitungan] = useState(null);
+  const [historyPerhitunganReguler, setHistoryPerhitunganReguler] = useState(null);
+  const [historyPerhitunganUmptkin, setHistoryPerhitunganUmptkin] = useState(null);
+  const [historyTerbaruData, setHistoryTerbaruData] = useState(null);
 
   // Fetch percentages from backend
   const loadLabPercentages = useCallback(async () => {
@@ -276,21 +278,64 @@ export default function AdminPanel() {
   // Fetch perhitungan dinamis dari backend GET /get/history/perhitungan
   const loadHistoryPerhitungan = useCallback(async (customParams = {}) => {
     try {
-      const params = {
+      const baseParams = {
         lab_id: selectedLabId,
         semester: analisisSemester,
         year: analisisYear,
         onlyAuto: persentaseOnlyAuto,
         ...customParams,
       };
-      const result = await getHistoryPerhitungan(params);
-      if (result.success && result.data) {
-        setHistoryPerhitungan(result.data);
+
+      // Always fetch reguler calculation
+      const resReguler = await getHistoryPerhitungan({ ...baseParams, mode: "reguler" });
+      if (resReguler.success && resReguler.data) {
+        setHistoryPerhitunganReguler(resReguler.data);
+      } else {
+        setHistoryPerhitunganReguler(null);
+      }
+
+      // If combined mode is active, also fetch UMPTKIN calculation
+      if (!persentaseOnlyAuto) {
+        const resUmptkin = await getHistoryPerhitungan({ ...baseParams, mode: "umptkin" });
+        if (resUmptkin.success && resUmptkin.data) {
+          setHistoryPerhitunganUmptkin(resUmptkin.data);
+        } else {
+          setHistoryPerhitunganUmptkin(null);
+        }
+      } else {
+        setHistoryPerhitunganUmptkin(null);
       }
     } catch (e) {
       console.error("Gagal memuat history perhitungan:", e);
     }
   }, [selectedLabId, analisisSemester, analisisYear, persentaseOnlyAuto]);
+
+  // Fetch riwayat terbaru gabungan dari backend GET /get/history/terbaru
+  const loadHistoryTerbaru = useCallback(async (customParams = {}) => {
+    try {
+      let semesterParam = "s1";
+      if (analisisSemester) {
+        const lower = String(analisisSemester).toLowerCase();
+        if (lower.includes("genap") || lower.includes("2") || lower === "s2") {
+          semesterParam = "s2";
+        }
+      }
+      const modeParam = !persentaseOnlyAuto ? "umptkin" : "reguler";
+      const params = {
+        semester: semesterParam,
+        mode: modeParam,
+        lab_id: selectedLabId,
+        year: analisisYear,
+        ...customParams,
+      };
+      const result = await getHistoryTerbaru(params);
+      if (result.success && result.data) {
+        setHistoryTerbaruData(result.data);
+      }
+    } catch (e) {
+      console.error("Gagal memuat history terbaru:", e);
+    }
+  }, [analisisSemester, persentaseOnlyAuto, selectedLabId, analisisYear]);
 
   // Wrapper untuk refresh seluruh data di admin panel agar selalu sinkron
   const refreshAllAdminData = useCallback(async () => {
@@ -299,10 +344,11 @@ export default function AdminPanel() {
       await loadBackendSchedules();
       await loadLabPercentages();
       await refreshHistoryData();
+      await loadHistoryTerbaru();
     } catch (e) {
       console.error("Gagal melakukan refresh data admin lengkap:", e);
     }
-  }, [refreshData, loadBackendSchedules, loadLabPercentages, refreshHistoryData]);
+  }, [refreshData, loadBackendSchedules, loadLabPercentages, refreshHistoryData, loadHistoryTerbaru]);
 
   useEffect(() => {
     if (isAdminAuthenticated) {
@@ -332,8 +378,9 @@ export default function AdminPanel() {
     } else if (activeTab === "analisis-lab") {
       refreshHistoryData({ semester: analisisSemester, year: analisisYear });
       loadHistoryPerhitungan({ semester: analisisSemester, year: analisisYear, lab_id: selectedLabId });
+      loadHistoryTerbaru();
     }
-  }, [isAdminAuthenticated, activeTab, reportType, reportYear, reportMonth, analisisSemester, analisisYear, selectedLabId, refreshHistoryData, loadHistoryPerhitungan]);
+  }, [isAdminAuthenticated, activeTab, reportType, reportYear, reportMonth, analisisSemester, analisisYear, selectedLabId, refreshHistoryData, loadHistoryPerhitungan, loadHistoryTerbaru]);
 
   // Reset impor states saat tab "buat-jadwal" baru dibuka/di-mount
   useEffect(() => {
@@ -347,15 +394,21 @@ export default function AdminPanel() {
   }, [activeTab]);
 
   const getMappedSchedules = useCallback((items) => {
-    return items.map(item => {
+    if (!items || !Array.isArray(items)) return [];
+    return items.map((item, idx) => {
+      if (!item) return null;
       const jamMulai = item.jam_mulai || item.jammulai || item.jammulainya || "";
       const jamSelesai = item.jam_selesai || item.jamselesai || item.jamselesainya || "";
       const jam = jamMulai && jamSelesai ? `${jamMulai} - ${jamSelesai}` : (item.jam || "-");
+      const tanggal = item.tanggal || item.tanggalInput || item.tanggalnya || "";
 
       return {
-        id: item.id || item.id_jadwal || Math.random().toString(),
+        id: item.id || item.id_jadwal || `sched-local-${idx}-${tanggal}`,
         hari: item.hari || "Senin",
         jam,
+        jam_mulai: jamMulai,
+        jam_selesai: jamSelesai,
+        tanggal,
         dosen: item.dosen || item.dosennya || "-",
         prodi: item.prodi || item.prodinya || "Umum",
         kelas: item.kelas || "-",
@@ -363,7 +416,7 @@ export default function AdminPanel() {
         id_lab: item.id_lab || item.labnya || item.lab_id || null,
         ruang: item.nama_lab || item.ruang || ""
       };
-    });
+    }).filter(Boolean);
   }, []);
 
   const page1Slots = [
@@ -480,6 +533,26 @@ export default function AdminPanel() {
       const labId = selectedLabObj ? selectedLabObj.id : 1;
       const labCapacity = selectedLabObj?.capacity || 36;
 
+      // Pre-check conflict on inputTanggal for labId before creating any UM PTKIN session
+      const existingConflict = (backendSchedules || []).find(s => {
+        if (!s) return false;
+        const matchesLab = (s.id_lab !== null && s.id_lab !== undefined && parseInt(s.id_lab, 10) === parseInt(labId, 10)) ||
+                           (s.ruang && String(s.ruang).toLowerCase() === inputLab.toLowerCase());
+        const matchesDate = s.tanggal === inputTanggal || s.tanggalnya === inputTanggal;
+        return matchesLab && matchesDate;
+      });
+
+      if (existingConflict) {
+        console.warn(`[UM PTKIN Aborted] Bentrok dengan jadwal terdaftar pada ${inputTanggal} di ${inputLab}:`, existingConflict);
+        Swal.fire({
+          icon: "warning",
+          title: "Tanggal Sudah Terisi Jadwal",
+          text: `Hei Admin! Pada tanggal ${inputTanggal} di ${inputLab} sudah terdapat jadwal terdaftar (${existingConflict.matkul || existingConflict.matkulnya || "Kuliah/Praktikum"}). Harap hapus terlebih dahulu jadwal di tanggal tersebut pada menu Penggunaan Lab jika ingin membuat jadwal UM PTKIN.`,
+          confirmButtonColor: "#3b82f6"
+        });
+        return;
+      }
+
       // Define 4 UM PTKIN sessions (07:30 to 15:30)
       const sessions = [
         { jamMulai: "07:30", jamSelesai: "10:00", dosen: umSupervisors.sesi1 || "Dosen Pengawas Sesi 1" },
@@ -506,7 +579,7 @@ export default function AdminPanel() {
             is_auto: false,
           });
           if (result.success) {
-            // Ambil ID jadwal yang baru dibuat dari response backend (termasuk dari message.insertId)
+            // Ambil ID jadwal yang baru dibuat dari response backend
             const newScheduleId = result.data?.message?.insertId || result.data?.data?.id || result.data?.id || result.data?.insertId || null;
             console.log(`[UM PTKIN] Jadwal sesi ${session.jamMulai}-${session.jamSelesai} dibuat, ID:`, newScheduleId);
 
@@ -524,7 +597,7 @@ export default function AdminPanel() {
                 console.log(`[UM PTKIN] Logbook sesi ${session.jamMulai} dibuat:`, bookingResult);
 
                 if (bookingResult.success) {
-                  // Auto-approve logbook (status → diterima) (termasuk dari message.insertId)
+                  // Auto-approve logbook (status → diterima)
                   const logbookId = bookingResult.data?.message?.insertId || bookingResult.data?.data?.id || bookingResult.data?.id || bookingResult.data?.insertId || null;
                   if (logbookId) {
                     const approveResult = await updateBookingStatus(logbookId, "diterima");
@@ -544,11 +617,11 @@ export default function AdminPanel() {
         }
       }
 
-      if (successCount > 0) {
+      if (successCount === sessions.length) {
         await Swal.fire({
           icon: "success",
           title: "Berhasil",
-          text: `${successCount} Sesi Jadwal UM PTKIN (07:30 - 15:30) berhasil dibuat otomatis!`,
+          text: `Semua 4 Sesi Jadwal UM PTKIN (07:30 - 15:30) pada tanggal ${inputTanggal} berhasil dibuat otomatis!`,
         });
 
         // Reset form states
@@ -564,14 +637,13 @@ export default function AdminPanel() {
         setIsUmPtkinMode(false);
         setUmSupervisors({ sesi1: "", sesi2: "", sesi3: "", sesi4: "" });
 
-        // Refresh data dari backend
         await refreshAllAdminData();
         setActiveTab("data-penggunaan");
       } else {
-        Swal.fire({
+        await Swal.fire({
           icon: "error",
-          title: "Gagal",
-          text: "Gagal membuat jadwal UM PTKIN.",
+          title: "Jadwal UM PTKIN Tidak Lengkap",
+          text: `Gagal membuat 4 sesi UM PTKIN secara lengkap (Hanya ${successCount} dari ${sessions.length} sesi yang berhasil). Harap periksa atau hapus data jadwal di tanggal ${inputTanggal} terlebih dahulu!`,
         });
       }
       return;
@@ -603,12 +675,48 @@ export default function AdminPanel() {
       });
       return;
     }
-
     // Cari ID lab berdasarkan nama lab yang dipilih
     const selectedLabObj = laboratories.find(l => l.name === inputLab);
     const labId = selectedLabObj ? selectedLabObj.id : 1;
 
     try {
+      // Check for slot time overlap on normal manual creation
+      const checkOverlap = (startA, endA, startB, endB) => startA < endB && startB < endA;
+      const parseTimeToMin = (t) => {
+        if (!t) return 0;
+        const [h, m] = String(t).split(":").map(Number);
+        return (h || 0) * 60 + (m || 0);
+      };
+
+      const newStart = parseTimeToMin(inputJamMulai);
+      const newEnd = parseTimeToMin(inputJamSelesai);
+
+      const manualConflict = (mySchedules || []).find(s => {
+        if (!s) return false;
+        const matchesLab = (s.ruang && String(s.ruang).toLowerCase() === inputLab.toLowerCase());
+        const matchesDate = s.tanggalInput === inputTanggal;
+        if (!matchesLab || !matchesDate) return false;
+
+        let sStart = 0;
+        let sEnd = 0;
+        if (s.jam && s.jam.includes("-")) {
+          const parts = s.jam.split("-").map(p => p.trim());
+          sStart = parseTimeToMin(parts[0]);
+          sEnd = parseTimeToMin(parts[1]);
+        }
+        return checkOverlap(newStart, newEnd, sStart, sEnd);
+      });
+
+      if (manualConflict) {
+        Swal.fire({
+          icon: "warning",
+          title: "Jam Slot Bentrok",
+          text: `Gagal membuat jadwal! Jam ${inputJamMulai} - ${inputJamSelesai} pada tanggal ${inputTanggal} di ${inputLab} sudah terisi oleh ${manualConflict.matkul} (${manualConflict.dosen}).`,
+          confirmButtonColor: "#3b82f6"
+        });
+        return;
+      }
+
       const result = await createSchedule({
         labId,
         prodi: finalProdi,
@@ -620,43 +728,48 @@ export default function AdminPanel() {
         source: "manual",
         is_auto: false,
       });
-if (result.success) {
-  await Swal.fire({
-    icon: "success",
-    title: "Berhasil",
-    text: "Jadwal Kuliah berhasil dibuat!",
-  });
 
-  // Reset form states
-  setInputLab("");
-  setInputProdi("");
-  setInputKelas("");
-  setInputMatkul("");
-  setInputDosen("");
-  setInputTanggal("");
-  setInputJamMulai("");
-  setInputJamSelesai("");
-  setInputKeterangan("");
+      if (result.success) {
+        await Swal.fire({
+          icon: "success",
+          title: "Berhasil",
+          text: "Jadwal Kuliah berhasil dibuat!",
+        });
 
-  // Refresh data dari backend
-  await refreshAllAdminData();
-  setActiveTab("data-penggunaan");
-} else {
-  Swal.fire({
-    icon: "error",
-    title: "Gagal",
-    text: `Gagal membuat jadwal: ${result.message}`,
-  });
-}
-    } 
-    catch (err) {
-  Swal.fire({
-    icon: "error",
-    title: "Koneksi Bermasalah",
-    text: "Gagal menghubungi server. Periksa koneksi Anda.",
-  });
-}
-    
+        // Reset form states
+        setInputLab("");
+        setInputProdi("");
+        setInputKelas("");
+        setInputMatkul("");
+        setInputDosen("");
+        setInputTanggal("");
+        setInputJamMulai("");
+        setInputJamSelesai("");
+        setInputKeterangan("");
+        setFilterHari("");
+        setFilterProdi("");
+        setFilterStatus("");
+        setFilterSource("");
+        setSearchQuery("");
+        setCurrentPage(1);
+
+        // Refresh data dari backend
+        await refreshAllAdminData();
+        setActiveTab("data-penggunaan");
+      } else {
+        Swal.fire({
+          icon: "error",
+          title: "Gagal",
+          text: `Gagal membuat jadwal: ${result.message}`,
+        });
+      }
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Koneksi Bermasalah",
+        text: "Gagal menghubungi server. Periksa koneksi Anda.",
+      });
+    }
   };
 
 
@@ -1658,6 +1771,19 @@ const handleSaveEdit = (e) => {
     }
 
     return matchesDate && matchesType && matchesStatus;
+  }).sort((a, b) => {
+    const dateA = a.tanggalInput || a.tanggal || "";
+    const dateB = b.tanggalInput || b.tanggal || "";
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+
+    const getStartTime = (jamStr) => {
+      if (!jamStr || jamStr === "-") return "00:00";
+      const parts = jamStr.split("-");
+      return (parts[0] || "00:00").trim();
+    };
+    const timeA = getStartTime(a.jam);
+    const timeB = getStartTime(b.jam);
+    return timeA.localeCompare(timeB);
   });
 
   // Debug data laporan untuk kebutuhan analisis backend/frontend
@@ -2349,74 +2475,456 @@ const handleSaveEdit = (e) => {
   }
 
   // Laporan Analisis dynamic stats calculations
-  const activeLabObject = labPercentages.find(l => l.id_lab === parseInt(selectedLabId, 10)) || labPercentages[0] || {};
+  const activeLabObject = labPercentages.find(l => String(l.id_lab) === String(selectedLabId)) || labPercentages[0] || {};
 
-  const totalJadwal = activeLabObject.total_jadwal_terikat_logbook !== undefined ? activeLabObject.total_jadwal_terikat_logbook : (activeLabObject.total_jadwal || 0);
-  const totalJamSemester = activeLabObject.total_jam_terpakai_semester !== undefined ? activeLabObject.total_jam_terpakai_semester : (activeLabObject.total_jam_semester || 0);
-  const waktuOperasionalSemester = activeLabObject.waktu_operasional_semester || 0;
-  const persenPenggunaan = activeLabObject.persen_penggunaan || 0;
 
-  // Hitung jam per slot (default 2.5)
-  let jamPerSlotCalc = 2.5;
-  if (totalJadwal > 0) {
-    if (activeLabObject.jam_per_minggu !== undefined) {
-      jamPerSlotCalc = activeLabObject.jam_per_minggu / totalJadwal;
+
+  // Mode Reguler vs Mode Combined (UM PTKIN)
+  const isModeCombined = !persentaseOnlyAuto; // checkbox checked = mode combined/umptkin
+
+  // 1. Dapatkan data active semester dan per_lab dari historyTerbaruData atau historyPerhitunganUmptkin/Reguler
+  let backendLabData = null;
+  let backendSchedulesList = null;
+  let semData = null;
+  let dataSrc = null;
+
+  const currentHistoryObj = historyTerbaruData || (isModeCombined ? historyPerhitunganUmptkin : historyPerhitunganReguler);
+  if (currentHistoryObj) {
+    if (currentHistoryObj.data_per_semester) {
+      dataSrc = currentHistoryObj.data_per_semester;
+    } else if (currentHistoryObj.data?.data_per_semester) {
+      dataSrc = currentHistoryObj.data.data_per_semester;
+    } else if (currentHistoryObj.data) {
+      dataSrc = currentHistoryObj.data;
     } else {
-      jamPerSlotCalc = totalJamSemester / (totalJadwal * 16);
+      dataSrc = currentHistoryObj;
     }
   }
 
-  const jamPerSlotFormatted = (jamPerSlotCalc === 0 || isNaN(jamPerSlotCalc))
-    ? "0"
-    : (Number.isInteger(jamPerSlotCalc) 
-        ? jamPerSlotCalc.toString()
-        : jamPerSlotCalc.toFixed(1).replace('.', ','));
+  const stripSeconds = (timeStr) => {
+    if (!timeStr) return "";
+    const parts = String(timeStr).split(":");
+    if (parts.length >= 2) {
+      return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+    }
+    return String(timeStr);
+  };
 
-  const persenPenggunaanFormatted = persenPenggunaan.toString().replace('.', ',');
+  const getIndonesianDayName = (dateStr) => {
+    if (!dateStr) return "Senin";
+    const days = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+    const d = new Date(dateStr);
+    return days[d.getDay()] || "Senin";
+  };
 
-  // Map and filter schedules for this lab
-  const mappedSchedules = getMappedSchedules(backendSchedules);
-  const labSchedules = mappedSchedules.filter(s => {
-    const matchesLabId = s.id_lab !== null && s.id_lab !== undefined && parseInt(s.id_lab, 10) === parseInt(selectedLabId, 10);
-    const matchesLabName = s.ruang && s.ruang.toLowerCase() === activeLabObject.nama_lab?.toLowerCase();
-    return matchesLabId || matchesLabName;
+  const formatScheduleItem = (item, idx) => {
+    if (!item) return null;
+    const jamMulai = stripSeconds(item.jammulai || item.jam_mulai || "");
+    const jamSelesai = stripSeconds(item.jamselesai || item.jam_selesai || "");
+    const jam = jamMulai && jamSelesai ? `${jamMulai} - ${jamSelesai}` : (item.jam || "-");
+    
+    let prodi = item.prodi || "";
+    let kelas = item.kelas || "";
+    if (!prodi && item.prodi_kelas) {
+      const pk = String(item.prodi_kelas).trim();
+      const match = pk.match(/(.*?)\s+(\d+[A-Za-z]?)$/);
+      if (match) {
+        prodi = match[1];
+        kelas = match[2];
+      } else {
+        prodi = pk;
+        kelas = "-";
+      }
+    }
+
+    let dosen = item.dosen || item.dosennya || "";
+    if (!dosen || dosen === "1" || dosen === "2" || dosen === "3" || dosen === "4") {
+      if (prodi === "UM PTKIN" || item.prodi_kelas === "UM PTKIN" || item.matkul === "UM PTKIN") {
+        dosen = item.dosen ? `Pengawas Sesi ${item.dosen}` : "Pengawas UM PTKIN";
+      } else if (!dosen) {
+        dosen = "-";
+      }
+    }
+
+    return {
+      id: item.id || `sched-backend-${idx}-${item.tanggal || ""}`,
+      hari: item.hari || (item.tanggal ? getIndonesianDayName(item.tanggal) : "Senin"),
+      jam,
+      jam_mulai: jamMulai,
+      jam_selesai: jamSelesai,
+      tanggal: item.tanggal || "",
+      dosen,
+      prodi: prodi || "Umum",
+      kelas: kelas || "-",
+      matkul: item.matkul || item.matkulnya || (prodi === "UM PTKIN" || item.prodi_kelas === "UM PTKIN" ? "UM PTKIN" : "Mata Kuliah Umum"),
+      id_lab: item.lab_id || item.id_lab || null,
+      ruang: item.nama_lab || "",
+      durasi_menit: item.durasi_menit !== undefined ? item.durasi_menit : null
+    };
+  };
+
+  if (dataSrc) {
+    const lowerSem = (analisisSemester || "s1").toLowerCase();
+    const isSem2 = lowerSem.includes("genap") || lowerSem.includes("2") || lowerSem === "s2";
+    const semKey = isSem2 ? "Semester 2 (Genap)" : "Semester 1 (Ganjil)";
+    semData = dataSrc[semKey] || dataSrc;
+    if (semData && Array.isArray(semData.per_lab)) {
+      backendLabData = semData.per_lab.find(l => 
+        l && (String(l.id_lab) === String(selectedLabId) ||
+        String(l.nama_lab).toLowerCase() === String(activeLabObject.nama_lab).toLowerCase())
+      );
+      if (backendLabData && Array.isArray(backendLabData.jadwal_terbaru)) {
+        backendSchedulesList = backendLabData.jadwal_terbaru
+          .map(formatScheduleItem)
+          .filter(Boolean)
+          .sort((a, b) => {
+            const dateA = a.tanggal || "";
+            const dateB = b.tanggal || "";
+            if (dateA !== dateB) return dateA.localeCompare(dateB);
+            return (a.jam_mulai || "00:00").localeCompare(b.jam_mulai || "00:00");
+          });
+      }
+    }
+  }
+
+  // Check detail_jadwal at root level of response (e.g. Postman response format)
+  const rootDetailJadwal = (isModeCombined ? historyPerhitunganUmptkin?.detail_jadwal : historyPerhitunganReguler?.detail_jadwal) || currentHistoryObj?.detail_jadwal;
+  if (!backendSchedulesList && Array.isArray(rootDetailJadwal) && rootDetailJadwal.length > 0) {
+    backendSchedulesList = rootDetailJadwal
+      .map(formatScheduleItem)
+      .filter(s => s && (selectedLabId ? (String(s.id_lab) === String(selectedLabId) || String(s.ruang).toLowerCase() === String(activeLabObject.nama_lab).toLowerCase()) : true))
+      .sort((a, b) => {
+        const dateA = a.tanggal || "";
+        const dateB = b.tanggal || "";
+        if (dateA !== dateB) return dateA.localeCompare(dateB);
+        return (a.jam_mulai || "00:00").localeCompare(b.jam_mulai || "00:00");
+      });
+  }
+
+  // Map and filter schedules for this lab (Local fallback)
+  const mappedSchedules = getMappedSchedules(mySchedules);
+  const localLabSchedulesFallback = mappedSchedules
+    .filter(s => {
+      const matchesLabId = s.id_lab !== null && s.id_lab !== undefined && String(s.id_lab) === String(selectedLabId);
+      const matchesLabName = s.ruang && s.ruang.toLowerCase() === activeLabObject.nama_lab?.toLowerCase();
+      return matchesLabId || matchesLabName;
+    })
+    .sort((a, b) => {
+      const dateA = a.tanggal || "";
+      const dateB = b.tanggal || "";
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+
+      const timeA = a.jam_mulai || "00:00";
+      const timeB = b.jam_mulai || "00:00";
+      return timeA.localeCompare(timeB);
+    });
+
+  const labSchedules = backendSchedulesList || localLabSchedulesFallback || [];
+
+  // Helper parsing jam_mulai dan jam_selesai ke menit
+  const getDurationInMinutes = (jamMulai, jamSelesai) => {
+    if (!jamMulai || !jamSelesai) return 150; // fallback to 2.5 hours = 150 minutes
+    const parseToMinutes = (timeStr) => {
+      const clean = String(timeStr).trim().replace(":", ".");
+      const parts = clean.split(".");
+      if (parts.length < 2) return 0;
+      const hrs = parseInt(parts[0], 10);
+      const mins = parseInt(parts[1], 10);
+      return (isNaN(hrs) ? 0 : hrs) * 60 + (isNaN(mins) ? 0 : mins);
+    };
+    const start = parseToMinutes(jamMulai);
+    const end = parseToMinutes(jamSelesai);
+    if (end > start) return end - start;
+    return 150; // fallback
+  };
+
+  let regulerCount = 0;
+  let umptkinCount = 0;
+  let n_menit_reguler = 0;
+  let n_menit_umptkin = 0;
+
+  labSchedules.forEach(s => {
+    if (!s) return;
+    const checkStringIncludes = (val, search) => {
+      if (!val) return false;
+      return String(val).toLowerCase().includes(search.toLowerCase());
+    };
+    const isUmPtkin = s.prodi === "UM PTKIN" || 
+                      s.matkul === "UM PTKIN" || 
+                      s.ruang === "UM PTKIN" || 
+                      s.kelas === "UMPTKIN" || 
+                      checkStringIncludes(s.prodi, "umptkin") || 
+                      checkStringIncludes(s.prodi, "um ptkin");
+    const durationMin = s.durasi_menit !== undefined && s.durasi_menit !== null
+      ? Number(s.durasi_menit)
+      : getDurationInMinutes(s.jam_mulai, s.jam_selesai);
+    if (isUmPtkin) {
+      umptkinCount += 1;
+      n_menit_umptkin += durationMin;
+    } else {
+      regulerCount += 1;
+      n_menit_reguler += durationMin;
+    }
   });
 
-  const renderTemplateTableRows = (slots, schedulesList) => {
-    const cleanStr = (str) => str ? str.replace(/\s+/g, '').replace(/\./g, ':') : "";
-    return slots.map((slot, idx) => {
-      // Find a matching schedule in schedulesList
-      const match = schedulesList.find(s => {
-        if (s.hari !== slot.day) return false;
-        const cleanSched = cleanStr(s.jam);
-        const cleanSlot = cleanStr(slot.time);
-        return cleanSched === cleanSlot || cleanSched.startsWith(cleanSlot.split("-")[0]);
-      });
+  const pekanReguler = 14;
+  const pekanUmptkin = 1;
+
+  const c_menit_reguler = n_menit_reguler * pekanReguler;
+  const c_menit_umptkin = n_menit_umptkin * pekanUmptkin;
+
+  const total_c_menit = isModeCombined ? (c_menit_reguler + c_menit_umptkin) : c_menit_reguler;
+
+  // Formatting values
+  const n_jam_reguler_val = n_menit_reguler / 60;
+  const n_jam_reguler_formatted = (isNaN(n_jam_reguler_val) || n_jam_reguler_val === 0)
+    ? "0"
+    : (Number.isInteger(n_jam_reguler_val) ? n_jam_reguler_val.toString() : n_jam_reguler_val.toFixed(1).replace(".", ","));
+
+  const c_jam_reguler_val = c_menit_reguler / 60;
+  const c_jam_reguler_formatted = (isNaN(c_jam_reguler_val) || c_jam_reguler_val === 0)
+    ? "0"
+    : (Number.isInteger(c_jam_reguler_val) ? c_jam_reguler_val.toString() : c_jam_reguler_val.toFixed(1).replace(".", ","));
+
+  const n_jam_umptkin_val = n_menit_umptkin / 60;
+  const n_jam_umptkin_formatted = (isNaN(n_jam_umptkin_val) || n_jam_umptkin_val === 0)
+    ? "0"
+    : (Number.isInteger(n_jam_umptkin_val) ? n_jam_umptkin_val.toString() : n_jam_umptkin_val.toFixed(1).replace(".", ","));
+
+  const c_jam_umptkin_val = c_menit_umptkin / 60;
+  const c_jam_umptkin_formatted = (isNaN(c_jam_umptkin_val) || c_jam_umptkin_val === 0)
+    ? "0"
+    : (Number.isInteger(c_jam_umptkin_val) ? c_jam_umptkin_val.toString() : c_jam_umptkin_val.toFixed(1).replace(".", ","));
+
+  const localTotalJamSemester = total_c_menit / 60;
+  const localTotalJamSemesterFormatted = (isNaN(localTotalJamSemester) || localTotalJamSemester === 0)
+    ? "0"
+    : (Number.isInteger(localTotalJamSemester) 
+        ? localTotalJamSemester.toString() 
+        : localTotalJamSemester.toFixed(1).replace(".", ","));
+
+  const localWaktuOperasionalSemester = 560; // 14 pekan x 40 jam operasional per pekan = 560 jam
+  
+  const localPersenPenggunaanVal = localWaktuOperasionalSemester > 0 ? ((localTotalJamSemester / localWaktuOperasionalSemester) * 100) : 0;
+  const localPersenPenggunaanFormatted = localPersenPenggunaanVal.toFixed(2).replace(".", ",");
+
+  // Priority mapping from backend GET /get/history/perhitungan or GET /get/history/terbaru response
+  const getRingkasanReguler = () => {
+    const targets = [
+      historyPerhitunganReguler,
+      historyPerhitunganUmptkin,
+      backendLabData,
+      semData,
+      historyTerbaruData
+    ];
+    for (const t of targets) {
+      if (!t) continue;
+      if (t.ringkasan_perhitungan) return t.ringkasan_perhitungan;
+      if (t.ringkasan) return t.ringkasan;
+    }
+    if (historyPerhitunganReguler && (historyPerhitunganReguler.total_jadwal !== undefined || historyPerhitunganReguler.n_jam !== undefined)) {
+      return historyPerhitunganReguler;
+    }
+    return null;
+  };
+  const ringkasanReguler = getRingkasanReguler();
+
+  const getRingkasanUmptkin = () => {
+    if (historyPerhitunganUmptkin?.ringkasan_perhitungan) return historyPerhitunganUmptkin.ringkasan_perhitungan;
+    if (historyPerhitunganUmptkin?.ringkasan) return historyPerhitunganUmptkin.ringkasan;
+    if (historyPerhitunganUmptkin && (historyPerhitunganUmptkin.total_jadwal !== undefined || historyPerhitunganUmptkin.n_jam !== undefined)) {
+      return historyPerhitunganUmptkin;
+    }
+    return null;
+  };
+  const ringkasanUmptkin = getRingkasanUmptkin();
+
+  const formatNum = (val) => {
+    if (val === undefined || val === null || isNaN(val)) return "0";
+    const numVal = Number(val);
+    return Number.isInteger(numVal) ? numVal.toString() : numVal.toFixed(2).replace(".", ",");
+  };
+
+  // Reguler
+  const displayNJamReguler = ringkasanReguler?.rincian_jam?.reguler?.n_jam !== undefined
+    ? formatNum(ringkasanReguler.rincian_jam.reguler.n_jam)
+    : (ringkasanUmptkin?.rincian_jam?.reguler?.n_jam !== undefined
+        ? formatNum(ringkasanUmptkin.rincian_jam.reguler.n_jam)
+        : (ringkasanReguler?.n_jam_reguler
+            ? formatNum(ringkasanReguler.n_jam_reguler) 
+            : (ringkasanReguler?.n_jam ? formatNum(ringkasanReguler.n_jam) : n_jam_reguler_formatted)));
+
+  const displayPekanReguler = ringkasanReguler?.pekan !== undefined 
+    ? ringkasanReguler.pekan 
+    : (ringkasanUmptkin?.pekan !== undefined ? ringkasanUmptkin.pekan : 14);
+
+  const displayCJamReguler = ringkasanReguler?.rincian_jam?.reguler?.c_jam !== undefined
+    ? formatNum(ringkasanReguler.rincian_jam.reguler.c_jam)
+    : (ringkasanUmptkin?.rincian_jam?.reguler?.c_jam !== undefined
+        ? formatNum(ringkasanUmptkin.rincian_jam.reguler.c_jam)
+        : (ringkasanReguler?.c_jam_reguler
+            ? formatNum(ringkasanReguler.c_jam_reguler)
+            : (ringkasanReguler?.a_akumulasi_jam 
+                ? formatNum(ringkasanReguler.a_akumulasi_jam) 
+                : (ringkasanReguler?.c_jam ? formatNum(ringkasanReguler.c_jam) : c_jam_reguler_formatted))));
+
+  const displayNMenitReguler = ringkasanReguler?.rincian_jam?.reguler?.n_menit !== undefined
+    ? ringkasanReguler.rincian_jam.reguler.n_menit
+    : (ringkasanUmptkin?.rincian_jam?.reguler?.n_menit !== undefined
+        ? ringkasanUmptkin.rincian_jam.reguler.n_menit
+        : (ringkasanReguler?.n_menit_reguler ? ringkasanReguler.n_menit_reguler : (ringkasanReguler?.n_menit ? ringkasanReguler.n_menit : n_menit_reguler)));
+
+  const displayCMenitReguler = ringkasanReguler?.rincian_jam?.reguler?.c_menit !== undefined
+    ? ringkasanReguler.rincian_jam.reguler.c_menit
+    : (ringkasanUmptkin?.rincian_jam?.reguler?.c_menit !== undefined
+        ? ringkasanUmptkin.rincian_jam.reguler.c_menit
+        : (ringkasanReguler?.c_menit_reguler ? ringkasanReguler.c_menit_reguler : (ringkasanReguler?.c_menit ? ringkasanReguler.c_menit : c_menit_reguler)));
+
+  // UMPTKIN
+  const displayNJamUmptkin = ringkasanUmptkin?.rincian_jam?.umptkin?.n_jam !== undefined
+    ? formatNum(ringkasanUmptkin.rincian_jam.umptkin.n_jam)
+    : (ringkasanUmptkin?.n_jam_umptkin
+        ? formatNum(ringkasanUmptkin.n_jam_umptkin)
+        : (ringkasanUmptkin?.n_jam ? formatNum(ringkasanUmptkin.n_jam) : n_jam_umptkin_formatted));
+
+  const displayCJamUmptkin = ringkasanUmptkin?.rincian_jam?.umptkin?.c_jam !== undefined
+    ? formatNum(ringkasanUmptkin.rincian_jam.umptkin.c_jam)
+    : (ringkasanUmptkin?.c_jam_umptkin
+        ? formatNum(ringkasanUmptkin.c_jam_umptkin)
+        : (ringkasanUmptkin?.a_akumulasi_jam 
+            ? formatNum(ringkasanUmptkin.a_akumulasi_jam) 
+            : (ringkasanUmptkin?.c_jam ? formatNum(ringkasanUmptkin.c_jam) : c_jam_umptkin_formatted)));
+
+  const displayNMenitUmptkin = ringkasanUmptkin?.rincian_jam?.umptkin?.n_menit !== undefined
+    ? ringkasanUmptkin.rincian_jam.umptkin.n_menit
+    : (ringkasanUmptkin?.n_menit_umptkin ? ringkasanUmptkin.n_menit_umptkin : (ringkasanUmptkin?.n_menit ? ringkasanUmptkin.n_menit : n_menit_umptkin));
+
+  const displayCMenitUmptkin = ringkasanUmptkin?.rincian_jam?.umptkin?.c_menit !== undefined
+    ? ringkasanUmptkin.rincian_jam.umptkin.c_menit
+    : (ringkasanUmptkin?.c_menit_umptkin ? ringkasanUmptkin.c_menit_umptkin : (ringkasanUmptkin?.c_menit ? ringkasanUmptkin.c_menit : c_menit_umptkin));
+
+  // Totals & Parse helper for dynamic calculations
+  const parseVal = (strOrNum) => {
+    if (strOrNum === undefined || strOrNum === null) return 0;
+    if (typeof strOrNum === "number") return strOrNum;
+    const clean = String(strOrNum).replace(",", ".");
+    const parsed = parseFloat(clean);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  const displayWaktuOperasional = (isModeCombined ? (ringkasanUmptkin?.jam_operasional_total ?? ringkasanReguler?.jam_operasional_total) : ringkasanReguler?.jam_operasional_total) !== undefined 
+    ? (isModeCombined ? (ringkasanUmptkin?.jam_operasional_total ?? ringkasanReguler?.jam_operasional_total) : ringkasanReguler?.jam_operasional_total)
+    : localWaktuOperasionalSemester;
+
+  const regulerHours = parseVal(displayCJamReguler);
+  const umptkinHours = isModeCombined ? parseVal(displayCJamUmptkin) : 0;
+  const totalJamVal = isModeCombined && (ringkasanUmptkin?.a_akumulasi_jam || ringkasanUmptkin?.c_jam)
+    ? (ringkasanUmptkin.a_akumulasi_jam || ringkasanUmptkin.c_jam)
+    : (regulerHours + umptkinHours);
+
+  const displayTotalJam = formatNum(totalJamVal);
+
+  const displayTotalMenit = isModeCombined
+    ? (ringkasanUmptkin?.c_menit !== undefined ? ringkasanUmptkin.c_menit : (Number(displayCMenitReguler) + Number(displayCMenitUmptkin)))
+    : Number(displayCMenitReguler);
+
+  const displayPersentaseFormatted = isModeCombined && ringkasanUmptkin?.persentase_formatted
+    ? String(ringkasanUmptkin.persentase_formatted).replace("%", "").trim()
+    : (isModeCombined && ringkasanUmptkin?.persentase !== undefined
+        ? formatNum(ringkasanUmptkin.persentase)
+        : formatNum((totalJamVal / displayWaktuOperasional) * 100));
+
+
+  const getPlpNameAndNip = () => {
+    const username = (userProfile?.user?.username || "").toLowerCase();
+    const name = (userProfile?.user?.name || userProfile?.user?.nama || userProfile?.user?.username || "Ade Candra, S.Pd");
+    
+    if (username.includes("ahmad") || name.toLowerCase().includes("ahmad")) {
+      return {
+        name: "Ahmad M.Kom",
+        nip: "198510242025211008"
+      };
+    }
+    if (username.includes("yusuf") || name.toLowerCase().includes("yusuf")) {
+      return {
+        name: "Muhammad Yusuf S.Kom",
+        nip: "197908182009101002"
+      };
+    }
+    return {
+      name: "Ade Candra, S.Pd",
+      nip: "197205112009101002"
+    };
+  };
+
+  const plpInfo = getPlpNameAndNip();
+
+  const page1Schedules = labSchedules.filter(s => {
+    if (!s) return false;
+    const isUmPtkin = s.prodi === "UM PTKIN" || 
+                      s.matkul === "UM PTKIN" || 
+                      s.kelas === "UMPTKIN" ||
+                      s.source === "um_ptkin";
+    return !isUmPtkin && (s.hari === "Senin" || s.hari === "Selasa" || s.hari === "Rabu" || s.hari === "Kamis");
+  });
+
+  const page2Schedules = labSchedules.filter(s => {
+    if (!s) return false;
+    const isUmPtkin = s.prodi === "UM PTKIN" || 
+                      s.matkul === "UM PTKIN" || 
+                      s.kelas === "UMPTKIN" ||
+                      s.source === "um_ptkin";
+    return !isUmPtkin && (s.hari === "Jumat" || s.hari === "Sabtu" || s.hari === "Minggu");
+  });
+
+  const renderDynamicTableRows = (schedulesList, periodText) => {
+    if (schedulesList.length === 0) {
+      return (
+        <tr className="border-b border-black">
+          <td colSpan="6" className="border border-black px-3 py-4 text-center text-[9.5px] font-semibold text-slate-400">
+            Tidak ada jadwal praktikum ({periodText})
+          </td>
+        </tr>
+      );
+    }
+
+    // Group schedules by day to calculate rowSpan
+    const dayCounts = {};
+    schedulesList.forEach(s => {
+      dayCounts[s.hari] = (dayCounts[s.hari] || 0) + 1;
+    });
+
+    const renderedDays = new Set();
+
+    return schedulesList.map((s, idx) => {
+      const isFirstForDay = !renderedDays.has(s.hari);
+      renderedDays.add(s.hari);
+      const daySpan = dayCounts[s.hari] || 1;
 
       return (
-        <tr key={idx} className="border-b border-black">
-          {slot.isFirstForDay && (
+        <tr key={s.id || idx} className="border-b border-black text-black">
+          {isFirstForDay && (
             <td 
-              rowSpan={slot.daySpan} 
-              className="border border-black text-center font-bold px-2 py-1.5 text-black text-xs w-[80px]"
+              rowSpan={daySpan} 
+              className="border border-black px-2 py-1 text-center font-bold text-[9.5px] bg-slate-50/50 print:bg-white text-black leading-tight w-[80px] align-middle"
             >
-              {slot.day}
+              {s.hari}
             </td>
           )}
-          <td className="border border-black text-center px-2 py-1.5 text-xs w-[120px] font-semibold text-black">
-            {slot.time}
+          <td className="border border-black px-2 py-1 text-center font-semibold text-[9.5px] text-black leading-tight w-[120px] align-middle">
+            {s.jam}
           </td>
-          <td className="border border-black px-2 py-1.5 text-xs text-black">
-            {match && match.matkul !== "-" ? match.matkul : ""}
+          <td className="border border-black px-3 py-1 text-left text-[9.5px] font-medium text-black leading-tight align-middle">
+            {s.matkul}
           </td>
-          <td className="border border-black px-2 py-1.5 text-xs text-black">
-            {match && match.dosen !== "-" ? match.dosen : ""}
+          <td className="border border-black px-3 py-1 text-left text-[9.5px] font-medium text-black leading-tight align-middle">
+            {s.dosen}
           </td>
-          <td className="border border-black text-center px-2 py-1.5 text-xs w-[60px] text-black">
-            {match && match.prodi !== "Umum" ? match.prodi : ""}
+          <td className="border border-black px-2 py-1 text-center text-[9.5px] font-medium text-black leading-tight w-[55px] align-middle">
+            {s.prodi}
           </td>
-          <td className="border border-black text-center px-2 py-1.5 text-xs w-[70px] text-black font-semibold">
-            {match && match.kelas !== "-" ? match.kelas : ""}
+          <td className="border border-black px-2 py-1 text-center text-[9.5px] font-medium text-black leading-tight w-[65px] align-middle font-semibold">
+            {s.kelas}
           </td>
         </tr>
       );
@@ -3083,33 +3591,6 @@ const handleSaveEdit = (e) => {
                     <option value="bulanan">Berdasarkan Bulan</option>
                   </select>
                 </div>
-                
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Status Pesanan</label>
-                  <select
-                    value={reportStatus}
-                    onChange={(e) => setReportStatus(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white cursor-pointer"
-                  >
-                    <option value="semua">Semua Status</option>
-                    <option value="terpakai">DIPESAN (Memiliki Logbook)</option>
-                    <option value="tidak terpakai">BELUM DIPESAN (Tanpa Logbook)</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tahun Akademik</label>
-                  <select
-                    value={reportYear}
-                    onChange={(e) => setReportYear(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white cursor-pointer"
-                  >
-                    <option value="2024">2024</option>
-                    <option value="2025">2025</option>
-                    <option value="2026">2026</option>
-                    <option value="2027">2027</option>
-                  </select>
-                </div>
 
                 {reportType === "bulanan" ? (
                   <div>
@@ -3146,6 +3627,33 @@ const handleSaveEdit = (e) => {
                     />
                   </div>
                 )}
+                
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Status Pesanan</label>
+                  <select
+                    value={reportStatus}
+                    onChange={(e) => setReportStatus(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white cursor-pointer"
+                  >
+                    <option value="semua">Semua Status</option>
+                    <option value="terpakai">Terpakai (Ada Logbook)</option>
+                    <option value="tidak terpakai">Tidak Terpakai / Kosong</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tahun Akademik</label>
+                  <select
+                    value={reportYear}
+                    onChange={(e) => setReportYear(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white cursor-pointer"
+                  >
+                    <option value="2024">2024</option>
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                    <option value="2027">2027</option>
+                  </select>
+                </div>
               </div>
 
               {/* Action Buttons Row */}
@@ -3445,11 +3953,10 @@ const handleSaveEdit = (e) => {
                   <div className="space-y-2 mb-6 text-black">
                     <h4 className="text-xs font-bold text-black">1. Waktu Operasional Laboratorium</h4>
                     <ul className="list-disc pl-5 text-[10.5px] leading-relaxed text-black font-medium">
-                      <li>Senin s.d. Kamis: 07.30 - 16.00 (8.5 jam per hari)</li>
-                      <li>Jumat: 07.30 - 16.30 (8.5 jam)</li>
+                      <li>Senin s.d. Jumat: 8 jam per hari</li>
                       <li>Total hari operasional per pekan: 5 hari</li>
-                      <li>Total pekan dalam satu semester: 16 pekan</li>
-                      <li>Total waktu operasional {activeLabObject.nama_lab || "Laboratorium Digital"} selama satu semester: 680 jam</li>
+                      <li>Total pekan dalam satu semester: 14 pekan</li>
+                      <li>Total waktu operasional {activeLabObject.nama_lab || "Laboratorium Digital"} selama satu semester: 560 jam</li>
                     </ul>
                   </div>
 
@@ -3471,7 +3978,7 @@ const handleSaveEdit = (e) => {
                         </tr>
                       </thead>
                       <tbody>
-                        {renderTemplateTableRows(page1Slots, labSchedules)}
+                        {renderDynamicTableRows(page1Schedules, "Senin s.d. Kamis")}
                       </tbody>
                     </table>
                   </div>
@@ -3518,37 +4025,43 @@ const handleSaveEdit = (e) => {
                         </tr>
                       </thead>
                       <tbody>
-                        {renderTemplateTableRows(page2Slots, labSchedules)}
+                        {renderDynamicTableRows(page2Schedules, "Jumat s.d. Minggu")}
                       </tbody>
                     </table>
 
                     {/* Math calculations description */}
                     <div className="pt-2 text-[10.5px] leading-relaxed text-black font-medium space-y-1">
                       <p className="font-bold">Waktu penggunaan laboratorium</p>
-                      {historyPerhitungan?.ringkasan ? (
+                      
+                      {isModeCombined ? (
                         <>
                           <p>
-                            Kegiatan praktikum: {historyPerhitungan.ringkasan.n_jam ?? 0} jam/pekan x {historyPerhitungan.ringkasan.pekan ?? 16} pekan = {historyPerhitungan.ringkasan.a_akumulasi_jam ?? historyPerhitungan.ringkasan.c_jam ?? 0} jam
+                            Kegiatan praktikum reguler: {displayNJamReguler} jam/pekan x {displayPekanReguler} pekan = {displayCJamReguler} jam
                           </p>
-                          {historyPerhitungan.ringkasan.n_menit !== undefined && (
-                            <p className="text-[9.5px] text-black font-sans">
-                              (Rincian menit: {historyPerhitungan.ringkasan.n_menit} menit/pekan x {historyPerhitungan.ringkasan.pekan} pekan = {historyPerhitungan.ringkasan.c_menit} menit = {historyPerhitungan.ringkasan.a_akumulasi_jam} jam)
-                            </p>
-                          )}
-                          <p className="font-bold uppercase tracking-wider">
-                            TOTAL : {historyPerhitungan.ringkasan.a_akumulasi_jam ?? 0} Jam
+                          <p className="text-[9.5px] text-slate-500 font-sans">
+                            (Rincian menit: {displayNMenitReguler} menit/pekan x {displayPekanReguler} pekan = {displayCMenitReguler} menit = {displayCJamReguler} jam)
+                          </p>
+                          <p className="mt-1">
+                            Kegiatan Ujian UMPTKIN: {displayNJamUmptkin} jam/pekan x 1 pekan = {displayCJamUmptkin} jam
+                          </p>
+                          <p className="text-[9.5px] text-slate-500 font-sans">
+                            (Rincian menit: {displayNMenitUmptkin} menit/pekan x 1 pekan = {displayCMenitUmptkin} menit = {displayCJamUmptkin} jam)
                           </p>
                         </>
                       ) : (
                         <>
                           <p>
-                            Kegiatan praktikum: {totalJadwal} x {jamPerSlotFormatted} jam x 16 pekan = {totalJamSemester} jam
+                            Kegiatan praktikum: {displayNJamReguler} jam/pekan x {displayPekanReguler} pekan = {displayCJamReguler} jam
                           </p>
-                          <p className="font-bold uppercase tracking-wider">
-                            TOTAL : {totalJamSemester} Jam
+                          <p className="text-[9.5px] text-slate-500 font-sans">
+                            (Rincian menit: {displayNMenitReguler} menit/pekan x {displayPekanReguler} pekan = {displayCMenitReguler} menit = {displayCJamReguler} jam)
                           </p>
                         </>
                       )}
+
+                      <p className="font-bold uppercase tracking-wider pt-1">
+                        TOTAL : {displayTotalJam} JAM
+                      </p>
                     </div>
                   </div>
 
@@ -3558,12 +4071,19 @@ const handleSaveEdit = (e) => {
                     <div className="text-[10.5px] leading-relaxed text-black pl-2 font-medium">
                       <p className="mb-2">Persentase penggunaan laboratorium terhadap total waktu operasional selama satu semester:</p>
                       <p className="font-bold bg-slate-50 border border-slate-100 p-2.5 rounded-lg inline-block text-[11px] text-slate-800 print:bg-white print:border-none print:p-0">
-                        {historyPerhitungan?.ringkasan ? (
-                          `${historyPerhitungan.ringkasan.a_akumulasi_jam ?? 0} jam / ${historyPerhitungan.ringkasan.jam_operasional_total ?? 680} jam x 100% = ${historyPerhitungan.ringkasan.persentase_formatted || `${historyPerhitungan.ringkasan.persentase}%`}`
-                        ) : (
-                          `${totalJamSemester} jam / ${waktuOperasionalSemester} jam x 100% = ${persenPenggunaanFormatted} %`
-                        )}
+                        {displayTotalJam} jam / {displayWaktuOperasional} jam x 100% = {displayPersentaseFormatted} %
                       </p>
+
+                      {isModeCombined && (
+                        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-[10px] text-amber-900 font-medium max-w-2xl leading-relaxed print:bg-white print:border-none print:p-0 print:mt-2">
+                          <p className="font-bold flex items-center gap-1 mb-0.5 text-amber-950">
+                            📝 Catatan Analisis:
+                          </p>
+                          <p className="m-0">
+                            Hasil persentase penggunaan mencakup gabungan <strong>kegiatan praktikum reguler + Ujian UMPTKIN</strong>. Selama pelaksanaan ujian tersebut, laboratorium digunakan secara penuh, sehingga rasio pemakaian ruang meningkat.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -3583,8 +4103,8 @@ const handleSaveEdit = (e) => {
                       <div>
                         <p className="invisible">Jakarta,</p>
                         <p className="mb-14">PLP,</p>
-                        <p className="underline font-bold">Ade Candra, S.Pd</p>
-                        <p className="font-medium text-[9.5px]">NIP. 197205112009101002</p>
+                        <p className="underline font-bold">{plpInfo.name}</p>
+                        <p className="font-medium text-[9.5px]">NIP. {plpInfo.nip}</p>
                       </div>
                     </div>
                   </div>

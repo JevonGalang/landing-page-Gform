@@ -103,6 +103,25 @@ export default function LaboratoryBookingForm() {
   const [selectedScheduleId, setSelectedScheduleId] = useState("");
   const selectedSchedule = mySchedules.find((s) => s.id === parseInt(selectedScheduleId, 10)) || null;
 
+  // Cari kapasitas lab terpilih secara dinamis dari backend data
+  const getCurrentLabCapacity = () => {
+    let labName = "";
+    if (selectedSchedule) {
+      labName = selectedSchedule.ruang;
+    } else if (selectedLaboratory) {
+      labName = selectedLaboratory;
+    }
+    
+    if (!labName) return 36; // default fallback
+    
+    const matchedLab = (laboratories || []).find(l => 
+      l && String(l.name || l.nama || l.nama_lab).toLowerCase() === String(labName).toLowerCase()
+    );
+    return matchedLab && matchedLab.capacity ? parseInt(matchedLab.capacity, 10) : 36;
+  };
+  
+  const currentMaxCapacity = getCurrentLabCapacity();
+
   // Student data form
   const [formData, setFormData] = useState({
     mahasiswa: "",
@@ -184,8 +203,8 @@ export default function LaboratoryBookingForm() {
       newErrors.jumlahHadir = "Jumlah yang hadir wajib diisi.";
     } else if (parseInt(formData.jumlahHadir, 10) < 1) {
       newErrors.jumlahHadir = "Jumlah hadir minimal 1 orang.";
-    } else if (parseInt(formData.jumlahHadir, 10) > 36) {
-      newErrors.jumlahHadir = "Jumlah hadir maksimal 36 orang.";
+    } else if (parseInt(formData.jumlahHadir, 10) > currentMaxCapacity) {
+      newErrors.jumlahHadir = `Jumlah hadir maksimal ${currentMaxCapacity} orang.`;
     }
 
     setErrors(newErrors);
@@ -265,7 +284,7 @@ export default function LaboratoryBookingForm() {
   };
 
   return (
-    <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto">
+    <div className="px-4 sm:px-6 py-6 max-w-6xl mx-auto">
       <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
 
         {/* Header */}
@@ -679,7 +698,7 @@ export default function LaboratoryBookingForm() {
                     name="jumlahHadir"
                     placeholder="Estimasi mahasiswa hadir"
                     min="1"
-                    max="36"
+                    max={currentMaxCapacity}
                     value={formData.jumlahHadir}
                     onChange={handleChange}
                     className={`w-full p-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm bg-slate-50/50 transition ${
