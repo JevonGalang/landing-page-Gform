@@ -9,13 +9,13 @@ import { BACKEND_URL } from "./api";
  *   - "penggunaanlab:update" → data jadwal/penggunaan lab berubah (array lengkap)
  *   - "logbook:update"       → data logbook berubah (array lengkap, sudah JOIN)
  * 
- * Server: http://172.20.32.62:3000
+ * Server: http://172.20.32.91
  * 
  * Pola: Socket mengirim DATA LENGKAP (array) dari database setiap kali ada
  * perubahan. Frontend tinggal replace data di state, TANPA perlu fetch ulang via HTTP.
  */
 
-const SOCKET_URL = BACKEND_URL;
+const SOCKET_URL = BACKEND_URL.replace(/\/api\/?$/, "");
 
 // Event names dari backend
 export const SOCKET_EVENTS = {

@@ -1,6 +1,6 @@
 import axios from "axios";
 
-export const BACKEND_URL = "/api";
+export const BACKEND_URL = "http://172.20.32.91/api";
 
 const API = axios.create({
   baseURL: BACKEND_URL,

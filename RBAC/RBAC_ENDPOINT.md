@@ -413,7 +413,7 @@ Response sukses:
 Socket.IO juga wajib JWT. Kirim token saat koneksi:
 
 ```js
-io("http://localhost:3000", {
+io("http://172.20.32.91", {
   auth: {
     token: tokenLogin
   }

@@ -168,14 +168,22 @@ export default function AdminPanel() {
 
   // Dropdown options
   const listHari = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
-  const listProdi = ["Teknik Informatika", "Sistem Informasi", "Matematika", "Sains Data", "Fisika", "Biologi"];
+  const listProdi = ["Teknik Informatika", "Sistem Informasi", "Matematika", "Sains Data"];
 
   // Search, Filter states for Data Penggunaan
   const [searchQuery, setSearchQuery] = useState("");
   const [filterHari, setFilterHari] = useState("");
+  const [filterLab, setFilterLab] = useState("");
   const [filterProdi, setFilterProdi] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterSource, setFilterSource] = useState("");
+
+  const availableLabNames = Array.from(
+    new Set([
+      ...filteredLaboratories.map((l) => l.name),
+      ...mySchedules.map((s) => s.ruang).filter(Boolean),
+    ])
+  ).sort();
 
   const [selectedLogIds, setSelectedLogIds] = useState([]);
 
@@ -747,6 +755,7 @@ export default function AdminPanel() {
         setInputJamSelesai("");
         setInputKeterangan("");
         setFilterHari("");
+        setFilterLab("");
         setFilterProdi("");
         setFilterStatus("");
         setFilterSource("");
@@ -1643,14 +1652,19 @@ const handleSaveEdit = (e) => {
       return false;
     }
 
-    const matchesSearch = 
-      log.dosen.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.matkul.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.kelas.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (log.mahasiswa && log.mahasiswa.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (log.nim && log.nim.toLowerCase().includes(searchQuery.toLowerCase()));
+    const searchLower = searchQuery.toLowerCase().trim();
+    const matchesSearch = !searchLower ? true : (
+      String(log.dosen || "").toLowerCase().includes(searchLower) ||
+      String(log.matkul || "").toLowerCase().includes(searchLower) ||
+      String(log.kelas || "").toLowerCase().includes(searchLower) ||
+      String(log.ruang || "").toLowerCase().includes(searchLower) ||
+      String(log.prodi || "").toLowerCase().includes(searchLower) ||
+      String(log.mahasiswa || "").toLowerCase().includes(searchLower) ||
+      String(log.nim || "").toLowerCase().includes(searchLower)
+    );
     
     const matchesHari = filterHari ? log.hari === filterHari : true;
+    const matchesLab = filterLab ? (String(log.ruang || "").toLowerCase() === filterLab.toLowerCase()) : true;
     const matchesProdi = filterProdi ? log.prodi === filterProdi : true;
     const matchesStatus = filterStatus 
       ? (filterStatus === "dipesan" 
@@ -1659,7 +1673,7 @@ const handleSaveEdit = (e) => {
       : true;
     const matchesSource = filterSource ? log.source === filterSource : true;
 
-    return matchesSearch && matchesHari && matchesProdi && matchesStatus && matchesSource;
+    return matchesSearch && matchesHari && matchesLab && matchesProdi && matchesStatus && matchesSource;
   }).sort((a, b) => {
     // FIFO: First In First Out — urutkan berdasarkan tanggal & jam paling awal dulu
     // 1. Sort by tanggalInput (YYYY-MM-DD) ascending
@@ -3233,12 +3247,12 @@ const handleSaveEdit = (e) => {
 
             {/* Filter and Search Bar */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 flex-1 w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 flex-1 w-full">
                 <div className="relative">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                   <input
                     type="text"
-                    placeholder="Cari Dosen, Matkul, Mhs, NIM..."
+                    placeholder="Cari Dosen, Matkul, Lab, Prodi, Mhs..."
                     value={searchQuery}
                     onChange={(e) => {
                       setSearchQuery(e.target.value);
@@ -3264,6 +3278,20 @@ const handleSaveEdit = (e) => {
                     ))}
                   </select>
                 </div>
+
+                <select
+                  value={filterLab}
+                  onChange={(e) => {
+                    setFilterLab(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 bg-white cursor-pointer"
+                >
+                  <option value="">Semua Laboratorium</option>
+                  {availableLabNames.map((labName) => (
+                    <option key={labName} value={labName}>{labName}</option>
+                  ))}
+                </select>
 
                 <select
                   value={filterProdi}
@@ -3307,6 +3335,26 @@ const handleSaveEdit = (e) => {
                   <option value="um_ptkin">UM PTKIN</option>
                 </select>
               </div>
+
+              {(searchQuery || filterHari || filterLab || filterProdi || filterStatus || filterSource) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setFilterHari("");
+                    setFilterLab("");
+                    setFilterProdi("");
+                    setFilterStatus("");
+                    setFilterSource("");
+                    setCurrentPage(1);
+                  }}
+                  className="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl border border-slate-200 transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                  title="Reset Semua Filter"
+                >
+                  <X size={13} />
+                  <span>Reset</span>
+                </button>
+              )}
             </div>
 
             {/* Notes Card Info */}
