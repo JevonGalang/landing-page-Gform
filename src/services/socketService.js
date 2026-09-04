@@ -15,7 +15,9 @@ import { BACKEND_URL } from "./api";
  * perubahan. Frontend tinggal replace data di state, TANPA perlu fetch ulang via HTTP.
  */
 
-const SOCKET_URL = BACKEND_URL.replace(/\/api\/?$/, "");
+const SOCKET_URL = BACKEND_URL.startsWith("http")
+  ? BACKEND_URL.replace(/\/api\/?$/, "")
+  : (typeof window !== "undefined" ? window.location.origin : "");
 
 // Event names dari backend
 export const SOCKET_EVENTS = {
